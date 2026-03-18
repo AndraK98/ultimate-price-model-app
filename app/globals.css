@@ -682,6 +682,10 @@ a {
   resize: vertical;
 }
 
+.field-control--textarea-lg {
+  min-height: 220px;
+}
+
 .field-control--file {
   padding-block: 10px;
 }

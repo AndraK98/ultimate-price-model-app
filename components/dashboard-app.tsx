@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, type FormEvent, useDeferredValue, useEffect, useState, useTransition } from "react";
+import { type FormEvent, useDeferredValue, useEffect, useState, useTransition } from "react";
 
 import {
   CatalogPanel,
@@ -30,8 +30,6 @@ type ProjectForm = {
 
 type ValuationForm = {
   description: string;
-  reference_image_url: string;
-  image_data_url: string;
 };
 
 type ProjectStoneLine = {
@@ -120,8 +118,6 @@ const blankProject: ProjectForm = {
 
 const blankValuation: ValuationForm = {
   description: "",
-  reference_image_url: "",
-  image_data_url: "",
 };
 
 const blankStoneBrowseFilters: StoneBrowseFilters = {
@@ -235,15 +231,6 @@ function countAppliedAssistFilters(filters: Record<string, string | number | und
 
 function stringifyFilterValue(value: string | number | undefined) {
   return value === undefined || value === "" ? "" : String(value);
-}
-
-async function toDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Could not read image file."));
-    reader.readAsDataURL(file);
-  });
 }
 
 async function postJson<T>(url: string, body: Record<string, unknown>) {
@@ -586,8 +573,6 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   function loadValuationIntoForm(valuation: ValuationRecord) {
     setValuationForm({
       description: valuation.description,
-      reference_image_url: valuation.reference_image_url,
-      image_data_url: valuation.image_data_url,
     });
     setValuationResult(valuation);
     setValuationModal(null);
@@ -629,8 +614,6 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     try {
       const created = await postJson<ValuationRecord>("/api/valuations", {
         description: valuationForm.description,
-        reference_image_url: valuationForm.reference_image_url,
-        image_data_url: valuationForm.image_data_url,
       });
       startTransition(() => {
         setValuations((current) => [created, ...current]);
@@ -642,22 +625,6 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       );
     } catch (error) {
       setValuationNotice(error instanceof Error ? error.message : "Could not run AI approximation.");
-    }
-  }
-
-  async function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      setValuationForm((current) => ({ ...current, image_data_url: "" }));
-      return;
-    }
-
-    try {
-      const dataUrl = await toDataUrl(file);
-      setValuationForm((current) => ({ ...current, image_data_url: dataUrl }));
-      setValuationNotice(`Attached ${file.name} for approximation.`);
-    } catch (error) {
-      setValuationNotice(error instanceof Error ? error.message : "Could not load image.");
     }
   }
 
@@ -1212,26 +1179,14 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
         <form className="stack" onSubmit={handleValuationSubmit}>
           <Field label="Description">
             <textarea
-              className="field-control field-control--textarea"
+              className="field-control field-control--textarea field-control--textarea-lg"
+              rows={8}
               required
               value={valuationForm.description}
               onChange={(event) => setValuationForm({ ...valuationForm, description: event.target.value })}
-              placeholder="Describe the piece"
+              placeholder="Describe the piece in full detail, as if you were briefing a jewelry expert directly. Include metal, weight, style, proportions, stone arrangement, dimensions, finish, shape, inspiration, era references, construction clues, and anything else that helps Gemini understand the piece contextually."
             />
           </Field>
-          <div className="form-grid">
-            <Field label="Reference image URL">
-              <input
-                className="field-control"
-                value={valuationForm.reference_image_url}
-                onChange={(event) => setValuationForm({ ...valuationForm, reference_image_url: event.target.value })}
-                placeholder="Optional"
-              />
-            </Field>
-            <Field label="Attach image">
-              <input className="field-control field-control--file" type="file" accept="image/*" onChange={handleImageChange} />
-            </Field>
-          </div>
           <div className="action-row">
             <button className="button" disabled={isPending} type="submit">
               Run approximation
