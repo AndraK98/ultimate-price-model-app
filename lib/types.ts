@@ -138,8 +138,8 @@ export interface ValuationEstimate {
   inferred_carat: number;
   inferred_complexity_level: number;
   inferred_gold_weight_g: number;
-  grounding_search_queries?: string[];
-  grounding_sources?: GroundingSource[];
+  grounding_search_queries: string[];
+  grounding_sources: GroundingSource[];
 }
 
 export interface ValuationRecord extends ValuationRequestInput, ValuationResolvedDetails, ValuationEstimate {

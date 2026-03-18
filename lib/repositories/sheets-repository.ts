@@ -510,6 +510,33 @@ export class SheetsRepository implements AppRepository {
         recommended_next_step: cell(row, canonical.headerMap, "recommended_next_step"),
         matched_catalog_stone_id: cell(row, canonical.headerMap, "matched_catalog_stone_id"),
         matched_catalog_setting_id: cell(row, canonical.headerMap, "matched_catalog_setting_id"),
+        inferred_valuation_target:
+          cell(row, canonical.headerMap, "inferred_valuation_target") === "stone"
+            ? "stone"
+            : cell(row, canonical.headerMap, "inferred_valuation_target") === "setting"
+              ? "setting"
+              : cell(row, canonical.headerMap, "valuation_target") === "stone"
+                ? "stone"
+                : cell(row, canonical.headerMap, "valuation_target") === "setting"
+                  ? "setting"
+                  : "piece",
+        inferred_stone_type: cell(row, canonical.headerMap, "inferred_stone_type") || cell(row, canonical.headerMap, "stone_type"),
+        inferred_stone_shape: cell(row, canonical.headerMap, "inferred_stone_shape") || cell(row, canonical.headerMap, "stone_shape"),
+        inferred_stone_cut: cell(row, canonical.headerMap, "inferred_stone_cut") || cell(row, canonical.headerMap, "stone_cut"),
+        inferred_setting_style:
+          cell(row, canonical.headerMap, "inferred_setting_style") || cell(row, canonical.headerMap, "setting_style"),
+        inferred_metal: cell(row, canonical.headerMap, "inferred_metal") || cell(row, canonical.headerMap, "metal"),
+        inferred_carat: parseNumber(cell(row, canonical.headerMap, "inferred_carat"), parseNumber(cell(row, canonical.headerMap, "carat"))),
+        inferred_complexity_level: parseNumber(
+          cell(row, canonical.headerMap, "inferred_complexity_level"),
+          parseNumber(cell(row, canonical.headerMap, "complexity_level")),
+        ),
+        inferred_gold_weight_g: parseNumber(
+          cell(row, canonical.headerMap, "inferred_gold_weight_g"),
+          parseNumber(cell(row, canonical.headerMap, "gold_weight_g")),
+        ),
+        grounding_search_queries: [],
+        grounding_sources: [],
         provider: "gemini",
         created_by: cell(row, canonical.headerMap, "created_by") || "sheet-import",
         created_at: cell(row, canonical.headerMap, "created_at") || "",

@@ -142,12 +142,7 @@ export class GeminiValuationProvider implements ValuationProvider {
       }),
     );
 
-    const text =
-      typeof response.text === "string"
-        ? response.text.trim()
-        : typeof response.text === "function"
-          ? String(await response.text()).trim()
-          : "";
+    const text = String((response as { text?: string }).text ?? "").trim();
 
     if (!text) {
       throw new Error("Gemini returned an empty valuation response.");

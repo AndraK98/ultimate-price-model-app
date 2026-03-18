@@ -93,12 +93,7 @@ export class GeminiCatalogSearchAssistProvider implements CatalogSearchAssistPro
       }),
     );
 
-    const text =
-      typeof response.text === "string"
-        ? response.text.trim()
-        : typeof response.text === "function"
-          ? String(await response.text()).trim()
-          : "";
+    const text = String((response as { text?: string }).text ?? "").trim();
     if (!text) {
       throw new Error("Gemini catalog search assist returned no content.");
     }
