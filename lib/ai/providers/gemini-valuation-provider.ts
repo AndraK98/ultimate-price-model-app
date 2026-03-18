@@ -446,6 +446,10 @@ export class GeminiValuationProvider implements ValuationProvider {
       pricingMethod,
       "",
       `Request description: ${input.description}`,
+      `Reference image URL: ${input.reference_image_url || "Not provided"}`,
+      input.reference_image_url
+        ? "A reference URL was provided. Use it as supplemental context if it helps identify the piece or comparable listing."
+        : "No reference URL was provided.",
       "Infer the actual jewelry characteristics from the full description and catalog context.",
       "The description may be long and detailed. Use the entire description holistically, including metal references, weights, setting construction, stone arrangement, dimensions, finish, inspiration, style cues, era references, and any pricing clues implied by the brief.",
       `Provided metal rates per gram: ${JSON.stringify(metalRates)}`,

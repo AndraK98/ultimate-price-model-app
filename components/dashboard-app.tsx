@@ -30,6 +30,8 @@ type ProjectForm = {
 
 type ValuationForm = {
   description: string;
+  reference_image_url: string;
+  image_data_url: string;
 };
 
 type ProjectStoneLine = {
@@ -118,6 +120,8 @@ const blankProject: ProjectForm = {
 
 const blankValuation: ValuationForm = {
   description: "",
+  reference_image_url: "",
+  image_data_url: "",
 };
 
 const blankStoneBrowseFilters: StoneBrowseFilters = {
@@ -249,6 +253,15 @@ async function getJson<T>(url: string, signal?: AbortSignal) {
   const payload = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(payload.error || "Request failed.");
   return payload;
+}
+
+function toDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function fetchCatalogPage<T>(
@@ -573,11 +586,31 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   function loadValuationIntoForm(valuation: ValuationRecord) {
     setValuationForm({
       description: valuation.description,
+      reference_image_url: valuation.reference_image_url,
+      image_data_url: valuation.image_data_url,
     });
     setValuationResult(valuation);
     setValuationModal(null);
     setValuationNotice(`Loaded approximation ${valuation.valuation_id} back into the form.`);
     pushToast(`Approximation ${valuation.valuation_id} loaded into the form.`);
+  }
+
+  async function handleValuationImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      setValuationForm((current) => ({ ...current, image_data_url: "" }));
+      return;
+    }
+
+    try {
+      const imageDataUrl = await toDataUrl(file);
+      setValuationForm((current) => ({ ...current, image_data_url: imageDataUrl }));
+      pushToast(`${file.name} attached for Gemini.`);
+    } catch (error) {
+      setValuationNotice(error instanceof Error ? error.message : "Could not attach image.");
+      pushToast(error instanceof Error ? error.message : "Could not attach image.", "error");
+    }
   }
 
   function openValuationDetails(valuation: ValuationRecord) {
@@ -614,6 +647,8 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     try {
       const created = await postJson<ValuationRecord>("/api/valuations", {
         description: valuationForm.description,
+        reference_image_url: valuationForm.reference_image_url,
+        image_data_url: valuationForm.image_data_url,
       });
       startTransition(() => {
         setValuations((current) => [created, ...current]);
@@ -1187,6 +1222,32 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               placeholder="Describe the piece in full detail, as if you were briefing a jewelry expert directly. Include metal, weight, style, proportions, stone arrangement, dimensions, finish, shape, inspiration, era references, construction clues, and anything else that helps Gemini understand the piece contextually."
             />
           </Field>
+          <div className="form-grid">
+            <Field label="Reference image URL">
+              <input
+                className="field-control"
+                value={valuationForm.reference_image_url}
+                onChange={(event) => setValuationForm({ ...valuationForm, reference_image_url: event.target.value })}
+                placeholder="https://..."
+              />
+            </Field>
+            <Field label="Attach image">
+              <input
+                className="field-control field-control--file"
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  void handleValuationImageChange(event);
+                }}
+              />
+            </Field>
+          </div>
+          {valuationForm.reference_image_url || valuationForm.image_data_url ? (
+            <div className="valuation-media-grid">
+              <MediaPreview src={valuationForm.reference_image_url} alt="Reference image preview" />
+              <MediaPreview src={valuationForm.image_data_url} alt="Uploaded image preview" />
+            </div>
+          ) : null}
           <div className="action-row">
             <button className="button" disabled={isPending} type="submit">
               Run approximation
