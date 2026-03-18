@@ -15,6 +15,28 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | nul
   };
 }
 
+function extractJsonText(raw: string) {
+  const trimmed = raw.trim();
+
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    return trimmed;
+  }
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  return trimmed;
+}
+
 function matchesDescription(haystack: string, description: string) {
   const normalizedHaystack = haystack.toLowerCase();
   const tokens = description
@@ -134,7 +156,7 @@ export class GeminiValuationProvider implements ValuationProvider {
         ],
         config: {
           tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
+          ...(model.includes("flash") ? {} : { responseMimeType: "application/json" }),
           temperature: 0.1,
           systemInstruction:
             "You are Capucinne's internal jewelry valuation assistant. Use grounded search when current market data helps, especially for gold, precious metals, gemstones, and comparable jewelry pricing. Return only JSON.",
@@ -148,7 +170,7 @@ export class GeminiValuationProvider implements ValuationProvider {
       throw new Error("Gemini returned an empty valuation response.");
     }
 
-    const parsed = valuationEstimateSchema.parse(JSON.parse(text));
+    const parsed = valuationEstimateSchema.parse(JSON.parse(extractJsonText(text)));
     const grounding = extractGrounding(
       response as {
         text?: string;
