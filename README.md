@@ -67,6 +67,7 @@ Core:
 - `GOLD_PRICE_PER_GRAM`
 - `QUOTE_MARGIN_MULTIPLIER` fallback multiplier when setting complexity is unavailable
 - `VALUATION_PROVIDER=gemini`
+- `BASIC_AUTH_PASSWORD` optional browser password gate for deployed environments
 
 Google Sheets:
 
@@ -83,6 +84,17 @@ Gemini:
 
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`
+
+## Password protection
+
+The app includes Basic Auth middleware for browser access.
+
+- Set `BASIC_AUTH_PASSWORD` in Vercel to enable it.
+- Leave it empty locally if you do not want the browser prompt during development.
+- Username is fixed to `admin`.
+- Password is whatever you set in `BASIC_AUTH_PASSWORD`.
+
+The middleware protects page routes and leaves API/static asset paths untouched.
 
 ## Google Sheets catalog mode
 
