@@ -474,6 +474,7 @@ a {
 }
 
 .table-card--catalog {
+  height: 620px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -485,9 +486,9 @@ a {
 }
 
 .table-scroll-shell {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: 470px;
+  height: 100%;
   overflow-y: auto;
   overflow-x: auto;
   border-radius: 18px;
@@ -981,6 +982,10 @@ a {
     min-height: 0;
   }
 
+  .table-card--catalog {
+    height: 560px;
+  }
+
   .catalog-filter-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1025,6 +1030,10 @@ a {
   .dashboard-shell,
   .setup-shell {
     width: min(100%, calc(100% - 10px));
+  }
+
+  .table-card--catalog {
+    height: 520px;
   }
 
   .setup-card,

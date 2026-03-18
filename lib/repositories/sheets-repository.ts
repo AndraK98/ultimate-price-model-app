@@ -4,7 +4,7 @@ import { mutateActivityDatabase, readActivityDatabase } from "@/lib/data/activit
 import { type AppRepository } from "@/lib/repositories/contracts";
 import { GoogleSheetsClient } from "@/lib/repositories/google-sheets-client";
 import { type Inquiry, type PricingDefaults, type Setting, type SettingFilters, type Stone, type StoneFilters, type ValuationRecord } from "@/lib/types";
-import { columnFromIndex, normalizeHeader, normalizeText, parseNumber } from "@/lib/utils";
+import { columnFromIndex, normalizeHeader, normalizeText, parseNumber, parseStoneSizeRange } from "@/lib/utils";
 
 const stoneHeaders = [
   "stone_id",
@@ -344,26 +344,31 @@ export class SheetsRepository implements AppRepository {
     return values
       .slice(legacy.index + 1)
       .filter((row) => row.length > 0 && cell(row, legacy.headerMap, "SKU"))
-      .map((row) => ({
-        stone_id: cell(row, legacy.headerMap, "SKU"),
-        name: cell(row, legacy.headerMap, "Type"),
-        shape: cell(row, legacy.headerMap, "Shape"),
-        color: cell(row, legacy.headerMap, "Color"),
-        carat: parseNumber(cell(row, legacy.headerMap, "Weight per Piece (ct)")),
-        min_size_mm: parseNumber(cell(row, legacy.headerMap, "OLD Size (mm)") || cell(row, legacy.headerMap, "NEW Size (mm)")),
-        max_size_mm: parseNumber(cell(row, legacy.headerMap, "NEW Size (mm)")),
-        quality: cell(row, legacy.headerMap, "Cut"),
-        price_per_carat: parseNumber(cell(row, legacy.headerMap, "Price per Carat ($USD)")),
-        final_price: parseNumber(
-          cell(row, legacy.headerMap, "Final Stone Price ($USD)"),
-          parseNumber(cell(row, legacy.headerMap, "Weight per Piece (ct)")) *
-            parseNumber(cell(row, legacy.headerMap, "Price per Carat ($USD)")),
-        ),
-        status: "active",
-        notes: [cell(row, legacy.headerMap, "Remarks"), cell(row, legacy.headerMap, "Notes")].filter(Boolean).join(" | "),
-        created_by: "sheet-import",
-        created_at: "",
-      }));
+      .map((row) => {
+        const oldSize = parseStoneSizeRange(cell(row, legacy.headerMap, "OLD Size (mm)"));
+        const newSize = parseStoneSizeRange(cell(row, legacy.headerMap, "NEW Size (mm)"));
+
+        return {
+          stone_id: cell(row, legacy.headerMap, "SKU"),
+          name: cell(row, legacy.headerMap, "Type"),
+          shape: cell(row, legacy.headerMap, "Shape"),
+          color: cell(row, legacy.headerMap, "Color"),
+          carat: parseNumber(cell(row, legacy.headerMap, "Weight per Piece (ct)")),
+          min_size_mm: oldSize.min || newSize.min,
+          max_size_mm: newSize.max || newSize.min || oldSize.max || oldSize.min,
+          quality: cell(row, legacy.headerMap, "Cut"),
+          price_per_carat: parseNumber(cell(row, legacy.headerMap, "Price per Carat ($USD)")),
+          final_price: parseNumber(
+            cell(row, legacy.headerMap, "Final Stone Price ($USD)"),
+            parseNumber(cell(row, legacy.headerMap, "Weight per Piece (ct)")) *
+              parseNumber(cell(row, legacy.headerMap, "Price per Carat ($USD)")),
+          ),
+          status: "active",
+          notes: [cell(row, legacy.headerMap, "Remarks"), cell(row, legacy.headerMap, "Notes")].filter(Boolean).join(" | "),
+          created_by: "sheet-import",
+          created_at: "",
+        };
+      });
   }
 
   private parseSettingRows(values: string[][]): Setting[] {

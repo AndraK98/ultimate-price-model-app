@@ -2,6 +2,34 @@ import { z } from "zod";
 
 const numericField = z.coerce.number().finite().nonnegative();
 const textField = z.string().trim().default("");
+const valuationNumericField = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  }
+
+  const normalized = String(value).trim();
+
+  if (!normalized) {
+    return 0;
+  }
+
+  const direct = Number(normalized.replace(/,/g, ""));
+  if (Number.isFinite(direct) && direct >= 0) {
+    return direct;
+  }
+
+  const match = normalized.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+  if (!match) {
+    return 0;
+  }
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}, z.number().finite().nonnegative());
 const groundingSourceSchema = z.object({
   title: z.string().trim().min(1),
   uri: z.string().trim().url(),
@@ -68,15 +96,15 @@ export const valuationResolvedDetailsSchema = z.object({
   stone_cut: textField,
   setting_style: textField,
   metal: textField,
-  carat: numericField.default(0),
-  complexity_level: numericField.default(0),
-  gold_weight_g: numericField.default(0),
+  carat: valuationNumericField.default(0),
+  complexity_level: valuationNumericField.default(0),
+  gold_weight_g: valuationNumericField.default(0),
   notes: textField,
 });
 
 export const valuationEstimateSchema = z.object({
-  estimated_value_low: numericField.default(0),
-  estimated_value_high: numericField.default(0),
+  estimated_value_low: valuationNumericField.default(0),
+  estimated_value_high: valuationNumericField.default(0),
   pricing_summary: z.string().trim().min(1).default("No pricing summary logged."),
   reasoning: z.string().trim().min(1),
   recommended_next_step: z.string().trim().min(1),
@@ -88,9 +116,9 @@ export const valuationEstimateSchema = z.object({
   inferred_stone_cut: textField,
   inferred_setting_style: textField,
   inferred_metal: textField,
-  inferred_carat: numericField.default(0),
-  inferred_complexity_level: numericField.default(0),
-  inferred_gold_weight_g: numericField.default(0),
+  inferred_carat: valuationNumericField.default(0),
+  inferred_complexity_level: valuationNumericField.default(0),
+  inferred_gold_weight_g: valuationNumericField.default(0),
   grounding_search_queries: z.array(z.string().trim().min(1)).default([]),
   grounding_sources: z.array(groundingSourceSchema).default([]),
 });

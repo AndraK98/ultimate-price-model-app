@@ -72,6 +72,38 @@ export function parseOptionalNumber(value: string | null | undefined): number | 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+export function parseStoneSizeRange(value: unknown): { min: number; max: number } {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return { min: value, max: value };
+  }
+
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/(?<=\d),(?=\d)/g, ".");
+
+  if (!normalized) {
+    return { min: 0, max: 0 };
+  }
+
+  const tokens = normalized.match(/\d+(?:\.\d+)?/g) ?? [];
+  const numbers = tokens
+    .map((token) => Number(token))
+    .filter((token): token is number => Number.isFinite(token) && token > 0);
+
+  if (numbers.length === 0) {
+    return { min: 0, max: 0 };
+  }
+
+  if (numbers.length === 1) {
+    return { min: numbers[0], max: numbers[0] };
+  }
+
+  return {
+    min: numbers[0],
+    max: numbers[1],
+  };
+}
+
 export function formatStoneSize(minSizeMm: number, maxSizeMm: number): string {
   const min = Number.isFinite(minSizeMm) && minSizeMm > 0 ? minSizeMm : 0;
   const max = Number.isFinite(maxSizeMm) && maxSizeMm > 0 ? maxSizeMm : 0;

@@ -1,6 +1,6 @@
 import { extractGrounding, runWithGeminiModelFallback } from "@/lib/ai/google-genai";
 import { type ValuationCatalogContext, type ValuationProvider } from "@/lib/ai/types";
-import { type ValuationEstimate, type ValuationRequestInput } from "@/lib/types";
+import { type Setting, type Stone, type ValuationEstimate, type ValuationRequestInput } from "@/lib/types";
 import { valuationEstimateSchema } from "@/lib/validators";
 
 function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
@@ -62,6 +62,244 @@ function normalizeValuationTarget(value: unknown) {
   return "piece";
 }
 
+function normalizeNumericValue(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const normalized = String(value ?? "").trim();
+
+  if (!normalized) {
+    return 0;
+  }
+
+  const direct = Number(normalized.replace(/,/g, ""));
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+
+  const match = normalized.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  if (!match) {
+    return 0;
+  }
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeTextValue(value: unknown, fallback = "") {
+  const normalized = String(value ?? "").trim();
+  return normalized || fallback;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function normalizeEstimateRange(low: number, high: number) {
+  const safeLow = Number.isFinite(low) && low >= 0 ? low : 0;
+  const safeHigh = Number.isFinite(high) && high >= 0 ? high : 0;
+
+  if (safeLow > 0 && safeHigh > 0) {
+    return safeLow <= safeHigh ? { low: safeLow, high: safeHigh } : { low: safeHigh, high: safeLow };
+  }
+
+  if (safeHigh > 0) {
+    return { low: roundMoney(safeHigh * 0.9), high: safeHigh };
+  }
+
+  if (safeLow > 0) {
+    return { low: safeLow, high: roundMoney(safeLow * 1.1) };
+  }
+
+  return { low: 0, high: 0 };
+}
+
+function inferMetalFromText(description: string) {
+  const normalized = description.toLowerCase();
+
+  if (normalized.includes("platinum")) {
+    return "Platinum";
+  }
+
+  if (normalized.includes("silver")) {
+    return "Silver";
+  }
+
+  if (normalized.includes("18k")) {
+    return "18K Gold";
+  }
+
+  if (normalized.includes("14k")) {
+    return "14K Gold";
+  }
+
+  if (normalized.includes("gold")) {
+    return "Gold";
+  }
+
+  return "";
+}
+
+function inferWeightFromText(description: string) {
+  const normalized = description.replace(/,/g, ".");
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*(?:g|gr|gram|grams)\b/i);
+
+  if (!match) {
+    return 0;
+  }
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function inferCaratFromText(description: string) {
+  const normalized = description.replace(/,/g, ".");
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*(?:ct|carat|carats)\b/i);
+
+  if (!match) {
+    return 0;
+  }
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function resolveMetalRate(metal: string, context: ValuationCatalogContext) {
+  const normalized = metal.toLowerCase();
+
+  if (normalized.includes("silver")) {
+    return context.defaults.metalPrices.silver;
+  }
+
+  if (normalized.includes("platinum")) {
+    return context.defaults.metalPrices.platinum;
+  }
+
+  return context.defaults.metalPrices.gold;
+}
+
+function fallbackMatchedStone(context: ValuationCatalogContext, description: string, parsed: unknown) {
+  const source = parsed as Record<string, unknown>;
+  const matchedStoneId = normalizeTextValue(source.matched_catalog_stone_id);
+
+  if (matchedStoneId) {
+    const directMatch = context.stones.find((stone) => stone.stone_id.trim().toUpperCase() === matchedStoneId.toUpperCase());
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  return takeMatchingOrFallback(
+    context.stones,
+    (stone) => matchesDescription(`${stone.stone_id} ${stone.name} ${stone.shape} ${stone.color} ${stone.quality}`, description),
+    1,
+  )[0];
+}
+
+function fallbackMatchedSetting(context: ValuationCatalogContext, description: string, parsed: unknown) {
+  const source = parsed as Record<string, unknown>;
+  const matchedSettingId = normalizeTextValue(source.matched_catalog_setting_id);
+
+  if (matchedSettingId) {
+    const directMatch = context.settings.find(
+      (setting) => setting.setting_id.trim().toUpperCase() === matchedSettingId.toUpperCase(),
+    );
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  return takeMatchingOrFallback(
+    context.settings,
+    (setting) => matchesDescription(`${setting.setting_id} ${setting.style} ${setting.metal}`, description),
+    1,
+  )[0];
+}
+
+function estimateFromContext(
+  input: ValuationRequestInput,
+  context: ValuationCatalogContext,
+  partial: ValuationEstimate,
+  matchedStone: Stone | undefined,
+  matchedSetting: Setting | undefined,
+): ValuationEstimate {
+  const inferredMetal = normalizeTextValue(partial.inferred_metal) || inferMetalFromText(input.description) || matchedSetting?.metal || "";
+  const inferredWeight =
+    normalizeNumericValue(partial.inferred_gold_weight_g) || inferWeightFromText(input.description) || matchedSetting?.gold_weight_g || 0;
+  const inferredCarat =
+    normalizeNumericValue(partial.inferred_carat) || inferCaratFromText(input.description) || matchedStone?.carat || 0;
+  const inferredComplexity =
+    normalizeNumericValue(partial.inferred_complexity_level) || matchedSetting?.complexity_level || 0;
+  const stoneBase = matchedStone?.final_price ?? 0;
+  const settingBase = matchedSetting?.base_price ?? 0;
+  const laborBase = matchedSetting?.labor_cost ?? (inferredComplexity > 0 ? inferredComplexity * 40 : 0);
+  const metalRate = resolveMetalRate(inferredMetal || matchedSetting?.metal || "gold", context);
+  const materialBase = inferredWeight > 0 ? inferredWeight * metalRate : 0;
+  const descriptionLooksLikeSetting = /\b(setting|ring|band|mount|solitaire|halo|shank|cathedral)\b/i.test(input.description);
+  const descriptionLooksLikeStone = /\b(stone|diamond|sapphire|ruby|emerald|moissanite|gem)\b/i.test(input.description);
+  let midpoint =
+    stoneBase +
+    settingBase +
+    Math.max(0, materialBase - (matchedSetting?.gold_weight_g ?? 0) * metalRate);
+
+  if (midpoint <= 0) {
+    midpoint = stoneBase + settingBase + materialBase + laborBase;
+  }
+
+  if (midpoint <= 0 && descriptionLooksLikeSetting && materialBase > 0) {
+    midpoint = materialBase + laborBase;
+  }
+
+  if (midpoint <= 0 && descriptionLooksLikeStone && stoneBase > 0) {
+    midpoint = stoneBase;
+  }
+
+  if (midpoint <= 0 && materialBase > 0) {
+    midpoint = materialBase;
+  }
+
+  if (midpoint <= 0 && matchedSetting) {
+    midpoint = matchedSetting.base_price;
+  }
+
+  if (midpoint <= 0 && matchedStone) {
+    midpoint = matchedStone.final_price;
+  }
+
+  const currentRange = normalizeEstimateRange(partial.estimated_value_low, partial.estimated_value_high);
+  const range =
+    currentRange.high > 0
+      ? currentRange
+      : {
+          low: roundMoney(midpoint * 0.92),
+          high: roundMoney(midpoint * 1.12),
+        };
+  const pricingSummary = normalizeTextValue(partial.pricing_summary);
+  const reasoning = normalizeTextValue(partial.reasoning);
+  const recommendedNextStep = normalizeTextValue(partial.recommended_next_step);
+
+  return {
+    ...partial,
+    estimated_value_low: range.low,
+    estimated_value_high: range.high,
+    pricing_summary:
+      pricingSummary ||
+      `Context estimate anchored to ${materialBase > 0 ? `${roundMoney(materialBase)} USD metal value` : "catalog pricing"}${settingBase > 0 ? `, ${roundMoney(settingBase)} USD setting` : ""}${stoneBase > 0 ? `, and ${roundMoney(stoneBase)} USD stone` : ""}.`,
+    reasoning:
+      reasoning ||
+      "Gemini description parsing was normalized and the final range was repaired from catalog anchors, metal rates, and inferred weight.",
+    recommended_next_step:
+      recommendedNextStep || "Review the inferred weight and nearest catalog match before sending the quote.",
+    matched_catalog_stone_id: normalizeTextValue(partial.matched_catalog_stone_id, matchedStone?.stone_id ?? ""),
+    matched_catalog_setting_id: normalizeTextValue(partial.matched_catalog_setting_id, matchedSetting?.setting_id ?? ""),
+    inferred_metal: inferredMetal,
+    inferred_carat: inferredCarat,
+    inferred_complexity_level: inferredComplexity,
+    inferred_gold_weight_g: inferredWeight,
+  };
+}
+
 function normalizeValuationEstimatePayload(payload: unknown): unknown {
   if (!payload || typeof payload !== "object") {
     return payload;
@@ -72,6 +310,24 @@ function normalizeValuationEstimatePayload(payload: unknown): unknown {
   return {
     ...source,
     inferred_valuation_target: normalizeValuationTarget(source.inferred_valuation_target),
+    estimated_value_low: normalizeNumericValue(source.estimated_value_low),
+    estimated_value_high: normalizeNumericValue(source.estimated_value_high),
+    pricing_summary: normalizeTextValue(source.pricing_summary, "No pricing summary logged."),
+    reasoning: normalizeTextValue(source.reasoning, "Estimated from the description, catalog context, and grounded pricing cues."),
+    recommended_next_step: normalizeTextValue(
+      source.recommended_next_step,
+      "Review the inferred match and adjust the quote if the piece differs materially.",
+    ),
+    matched_catalog_stone_id: normalizeTextValue(source.matched_catalog_stone_id),
+    matched_catalog_setting_id: normalizeTextValue(source.matched_catalog_setting_id),
+    inferred_stone_type: normalizeTextValue(source.inferred_stone_type),
+    inferred_stone_shape: normalizeTextValue(source.inferred_stone_shape),
+    inferred_stone_cut: normalizeTextValue(source.inferred_stone_cut),
+    inferred_setting_style: normalizeTextValue(source.inferred_setting_style),
+    inferred_metal: normalizeTextValue(source.inferred_metal),
+    inferred_carat: normalizeNumericValue(source.inferred_carat),
+    inferred_complexity_level: normalizeNumericValue(source.inferred_complexity_level),
+    inferred_gold_weight_g: normalizeNumericValue(source.inferred_gold_weight_g),
     grounding_search_queries: Array.isArray(source.grounding_search_queries)
       ? source.grounding_search_queries.map((value) => String(value).trim()).filter(Boolean)
       : [],
@@ -175,9 +431,13 @@ export class GeminiValuationProvider implements ValuationProvider {
       "Think like a senior jewelry estimator receiving a natural-language brief from a colleague.",
       "The description may be messy, incomplete, informal, or written in business shorthand. Your job is to interpret it contextually and turn it into a useful internal approximation.",
       "Return strict JSON with the keys: estimated_value_low, estimated_value_high, pricing_summary, reasoning, recommended_next_step, matched_catalog_stone_id, matched_catalog_setting_id, inferred_valuation_target, inferred_stone_type, inferred_stone_shape, inferred_stone_cut, inferred_setting_style, inferred_metal, inferred_carat, inferred_complexity_level, inferred_gold_weight_g, grounding_search_queries, grounding_sources.",
+      'Example numeric style: {"estimated_value_low": 1720, "estimated_value_high": 1940, "inferred_gold_weight_g": 10, "inferred_complexity_level": 3}.',
       "If no catalog match exists, set the matched catalog field to an empty string.",
       "Use the inferred_* fields to return the structured characteristics you extracted from the description.",
       "If a characteristic cannot be inferred, return an empty string for text fields and 0 for numeric fields.",
+      "All numeric fields must be raw JSON numbers only. Do not include units, currency symbols, words, or formatted strings in numeric fields.",
+      "Do not use null, NaN, unknown, or explanatory text in numeric fields. Always output a concrete number for estimated_value_low and estimated_value_high.",
+      "If the description gives weight or material but not a catalog match, still produce an estimate from the metal rates and a practical making/labor assumption.",
       "pricing_summary must be a concise numeric pricing trace, not hidden chain-of-thought. Keep it to 3-5 short sentences with the main amounts and basis used.",
       "reasoning must stay short.",
       "recommended_next_step must stay short.",
@@ -231,8 +491,9 @@ export class GeminiValuationProvider implements ValuationProvider {
       throw new Error("Gemini returned an empty valuation response.");
     }
 
+    const normalizedPayload = normalizeValuationEstimatePayload(JSON.parse(extractJsonText(text)));
     const parsed = valuationEstimateSchema.parse(
-      normalizeValuationEstimatePayload(JSON.parse(extractJsonText(text))),
+      normalizedPayload,
     );
     const grounding = extractGrounding(
       response as {
@@ -250,12 +511,19 @@ export class GeminiValuationProvider implements ValuationProvider {
         }>;
       },
     );
+    const repaired = estimateFromContext(
+      input,
+      context,
+      parsed,
+      fallbackMatchedStone(context, input.description, normalizedPayload),
+      fallbackMatchedSetting(context, input.description, normalizedPayload),
+    );
 
     return {
-      ...parsed,
+      ...repaired,
       grounding_search_queries:
-        parsed.grounding_search_queries.length > 0 ? parsed.grounding_search_queries : grounding.searchQueries,
-      grounding_sources: parsed.grounding_sources.length > 0 ? parsed.grounding_sources : grounding.sources,
+        repaired.grounding_search_queries.length > 0 ? repaired.grounding_search_queries : grounding.searchQueries,
+      grounding_sources: repaired.grounding_sources.length > 0 ? repaired.grounding_sources : grounding.sources,
     };
   }
 }
