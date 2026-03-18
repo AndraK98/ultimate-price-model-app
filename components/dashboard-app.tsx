@@ -317,6 +317,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [settingAssistNotice, setSettingAssistNotice] = useState("");
   const [valuationResult, setValuationResult] = useState<ValuationRecord | null>(initialSnapshot.valuations[0] ?? null);
   const [valuationModal, setValuationModal] = useState<ValuationRecord | null>(null);
+  const [valuationLoading, setValuationLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const deferredStoneSearch = useDeferredValue(stoneSearch.trim());
@@ -643,6 +644,8 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
 
   async function handleValuationSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setValuationLoading(true);
+    setValuationNotice("");
 
     try {
       const created = await postJson<ValuationRecord>("/api/valuations", {
@@ -660,6 +663,8 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       );
     } catch (error) {
       setValuationNotice(error instanceof Error ? error.message : "Could not run AI approximation.");
+    } finally {
+      setValuationLoading(false);
     }
   }
 
@@ -1249,8 +1254,8 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
             </div>
           ) : null}
           <div className="action-row">
-            <button className="button" disabled={isPending} type="submit">
-              Run approximation
+            <button className="button" disabled={valuationLoading || isPending} type="submit">
+              {valuationLoading ? "Thinking..." : "Run approximation"}
             </button>
             {valuationNotice ? <p className="inline-note">{valuationNotice}</p> : null}
           </div>
@@ -1262,9 +1267,46 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               <div>
                 <h3>Latest approximation</h3>
               </div>
-              {valuationResult ? <StatusPill>{valuationResult.provider}</StatusPill> : null}
+              {valuationLoading ? <StatusPill tone="rose">thinking</StatusPill> : valuationResult ? <StatusPill>{valuationResult.provider}</StatusPill> : null}
             </div>
-            {valuationResult ? (
+            <div key={valuationLoading ? "thinking" : valuationResult?.valuation_id ?? "empty"} className="ai-response-frame">
+            {valuationLoading ? (
+              <>
+                <div className="detail-block">
+                  <h4>Request</h4>
+                  <p className="detail-note">{valuationForm.description}</p>
+                  {valuationForm.reference_image_url ? (
+                    <p className="detail-note">
+                      <a className="link-inline" href={valuationForm.reference_image_url} target="_blank" rel="noreferrer">
+                        {valuationForm.reference_image_url}
+                      </a>
+                    </p>
+                  ) : null}
+                  {(valuationForm.reference_image_url || valuationForm.image_data_url) ? (
+                    <div className="valuation-media-grid">
+                      <MediaPreview src={valuationForm.reference_image_url} alt="Reference image preview" />
+                      <MediaPreview src={valuationForm.image_data_url} alt="Uploaded image preview" />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="thinking-panel">
+                  <div className="thinking-panel__status">
+                    <span>Loading response from Gemini</span>
+                    <div className="thinking-dots" aria-hidden="true">
+                      <span className="thinking-dot" />
+                      <span className="thinking-dot" />
+                      <span className="thinking-dot" />
+                    </div>
+                  </div>
+                  <p className="detail-note">Reading the brief, image context, and catalog references to assemble an estimate.</p>
+                  <div className="thinking-lines" aria-hidden="true">
+                    <span className="thinking-line thinking-line--long" />
+                    <span className="thinking-line thinking-line--mid" />
+                    <span className="thinking-line thinking-line--short" />
+                  </div>
+                </div>
+              </>
+            ) : valuationResult ? (
               <>
                 <div className="detail-block">
                   <h4>Request</h4>
@@ -1300,6 +1342,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
             ) : (
               <p className="empty-state">No approximation yet.</p>
             )}
+            </div>
           </div>
           <div className="table-card">
             <div className="table-card__header"><h3>Log</h3><span>{valuations.length}</span></div>
