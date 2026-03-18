@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { mockSeed, type MockDatabase } from "@/lib/data/mock-seed";
+import { resolveRuntimeStoragePath } from "@/lib/data/runtime-storage";
 import {
   inquiryInputSchema,
   settingInputSchema,
@@ -12,7 +13,7 @@ import {
   valuationResolvedDetailsSchema,
 } from "@/lib/validators";
 
-const dbPath = path.join(process.cwd(), "storage", "mock-db.json");
+const dbPath = resolveRuntimeStoragePath("mock-db.json");
 
 const stoneSchema = stoneInputSchema.extend({
   stone_id: z.string().trim().min(1),

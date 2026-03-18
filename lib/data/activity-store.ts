@@ -2,9 +2,10 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
+import { resolveRuntimeStoragePath } from "@/lib/data/runtime-storage";
 import { inquiryInputSchema, valuationEstimateSchema, valuationRequestSchema, valuationResolvedDetailsSchema } from "@/lib/validators";
 
-const dbPath = path.join(process.cwd(), "storage", "activity-db.json");
+const dbPath = resolveRuntimeStoragePath("activity-db.json");
 
 const inquirySchema = inquiryInputSchema.extend({
   inquiry_id: z.string().trim().min(1),

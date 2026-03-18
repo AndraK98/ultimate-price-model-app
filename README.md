@@ -46,6 +46,8 @@ npm run dev
 
 With no Google Sheets credentials configured, the app uses seeded local mock data immediately.
 
+On Vercel or other serverless platforms, runtime local storage automatically falls back to a writable temp directory instead of the read-only deployment bundle.
+
 The dashboard also shows live readiness, mapped sheet names, and which environment variables are still missing before the app can switch from mock mode to the read-only Google Sheets catalog and Gemini.
 
 ## Main workflow
@@ -131,6 +133,7 @@ Notes:
 - `DATA_MODE=sheets` requires valid Google credentials.
 - The Google service account only needs read access to the source spreadsheet.
 - Stones and settings are read from Google Sheets, but inquiries and valuations are stored locally in `storage/activity-db.json`.
+- On Vercel/serverless, those runtime files are stored in a temp directory and are ephemeral between cold starts or redeploys.
 - The repository can read legacy workbook-style `Stones` and `Settings - Rings` layouts as a migration aid.
 - In the legacy `Settings - Rings` layout, complexity can be read from the `Complexity Level` column, the `Complexity` column, or the cell directly to the right of `Setting Master SKU` so the app can follow the existing workbook formula.
 - Metal rates are read from `Metal & Pricing Variables!B18:B20` where `B18=gold`, `B19=silver`, and `B20=platinum`.
