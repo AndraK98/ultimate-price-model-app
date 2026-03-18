@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const BASIC_AUTH_USER = "admin";
+const AUTH_COOKIE_NAME = "capucinne_basic_auth";
 
 function unauthorizedResponse() {
   return new NextResponse("Authentication Required", {
@@ -36,17 +36,43 @@ function parseBasicAuth(header: string) {
   }
 }
 
-export function middleware(request: NextRequest) {
+async function createAuthToken(user: string, password: string) {
+  const encoded = new TextEncoder().encode(`${user}:${password}`);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function middleware(request: NextRequest) {
+  const configuredUser = process.env.BASIC_AUTH_USER?.trim();
   const configuredPassword = process.env.BASIC_AUTH_PASSWORD?.trim();
 
-  if (!configuredPassword) {
+  if (!configuredUser || !configuredPassword) {
+    return NextResponse.next();
+  }
+
+  const expectedToken = await createAuthToken(configuredUser, configuredPassword);
+  const cookieToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;
+
+  if (cookieToken === expectedToken) {
     return NextResponse.next();
   }
 
   const credentials = parseBasicAuth(request.headers.get("authorization") ?? "");
 
-  if (credentials?.user === BASIC_AUTH_USER && credentials.password === configuredPassword) {
-    return NextResponse.next();
+  if (credentials?.user === configuredUser && credentials.password === configuredPassword) {
+    const response = NextResponse.next();
+    response.cookies.set({
+      name: AUTH_COOKIE_NAME,
+      value: expectedToken,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: request.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge: 60 * 60 * 12,
+    });
+    return response;
   }
 
   return unauthorizedResponse();
