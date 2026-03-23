@@ -3,8 +3,27 @@ import { matchesSettingFilters, matchesStoneFilters } from "@/lib/catalog-search
 import { mutateActivityDatabase, readActivityDatabase } from "@/lib/data/activity-store";
 import { type AppRepository } from "@/lib/repositories/contracts";
 import { GoogleSheetsClient } from "@/lib/repositories/google-sheets-client";
-import { type Inquiry, type PricingDefaults, type Setting, type SettingFilters, type Stone, type StoneFilters, type ValuationRecord } from "@/lib/types";
-import { columnFromIndex, normalizeHeader, normalizeText, parseNumber, parseStoneSizeRange } from "@/lib/utils";
+import {
+  type Inquiry,
+  type PricingDefaults,
+  type ProductComposition,
+  type ProductCompositionStoneLine,
+  type ProductCompositionVariant,
+  type Setting,
+  type SettingFilters,
+  type Stone,
+  type StoneFilters,
+  type ValuationRecord,
+} from "@/lib/types";
+import {
+  columnFromIndex,
+  extractShopifyProductHandle,
+  normalizeDigits,
+  normalizeHeader,
+  normalizeText,
+  parseNumber,
+  parseStoneSizeRange,
+} from "@/lib/utils";
 
 const stoneHeaders = [
   "stone_id",
@@ -140,6 +159,55 @@ function extractMasterPopisiSettingSkus(value: string): string[] {
         .filter(Boolean),
     ),
   );
+}
+
+function resolveProductReference(reference: string): {
+  raw: string;
+  normalizedId: string;
+  normalizedHandle: string;
+  matchedBy: ProductComposition["matched_by"];
+} {
+  const raw = reference.trim();
+  const normalizedId = normalizeDigits(raw);
+  const normalizedHandle = extractShopifyProductHandle(raw);
+
+  return {
+    raw,
+    normalizedId,
+    normalizedHandle,
+    matchedBy: /^https?:\/\//i.test(raw) ? "url" : normalizedId ? "id" : "handle",
+  };
+}
+
+function buildVariantKey(parts: Array<string | undefined>) {
+  const normalized = parts.map((part) => part?.trim()).filter(Boolean);
+  return normalized.join("::") || crypto.randomUUID();
+}
+
+function createProductStoneLine(args: {
+  stoneId: string;
+  quantity: number;
+  role: "main" | "accent";
+  stone: Stone | null;
+  label: string;
+  shape: string;
+  cut: string;
+  quality: string;
+  color: string;
+  measurements: string;
+}): ProductCompositionStoneLine {
+  return {
+    stone_id: args.stoneId,
+    quantity: args.quantity,
+    role: args.role,
+    stone: args.stone,
+    label: args.label,
+    shape: args.shape,
+    cut: args.cut,
+    quality: args.quality,
+    color: args.color,
+    measurements: args.measurements,
+  };
 }
 
 function valueAtColumn(row: string[], columnIndex: number): string {
@@ -510,6 +578,10 @@ export class SheetsRepository implements AppRepository {
         reference_image_url: cell(row, canonical.headerMap, "reference_image_url"),
         estimated_value_low: parseNumber(cell(row, canonical.headerMap, "estimated_value_low")),
         estimated_value_high: parseNumber(cell(row, canonical.headerMap, "estimated_value_high")),
+        estimated_stone_total: parseNumber(cell(row, canonical.headerMap, "estimated_stone_total")),
+        estimated_setting_total: parseNumber(cell(row, canonical.headerMap, "estimated_setting_total")),
+        inferred_complexity_multiplier: parseNumber(cell(row, canonical.headerMap, "inferred_complexity_multiplier")),
+        estimated_formula_total: parseNumber(cell(row, canonical.headerMap, "estimated_formula_total")),
         pricing_summary: cell(row, canonical.headerMap, "pricing_summary") || "No pricing summary logged.",
         reasoning: cell(row, canonical.headerMap, "reasoning"),
         recommended_next_step: cell(row, canonical.headerMap, "recommended_next_step"),
@@ -545,6 +617,8 @@ export class SheetsRepository implements AppRepository {
         provider: "gemini",
         created_by: cell(row, canonical.headerMap, "created_by") || "sheet-import",
         created_at: cell(row, canonical.headerMap, "created_at") || "",
+        updated_at: cell(row, canonical.headerMap, "updated_at") || cell(row, canonical.headerMap, "created_at") || "",
+        messages: [],
       }));
   }
 
@@ -785,6 +859,190 @@ export class SheetsRepository implements AppRepository {
     return Array.from(matchedSkus);
   }
 
+  async findProductComposition(reference: string): Promise<ProductComposition | null> {
+    const resolvedReference = resolveProductReference(reference);
+
+    if (!resolvedReference.raw) {
+      return null;
+    }
+
+    const rows = await this.getCachedMasterPopisiRows();
+    const headerMatch = findHeaderRow(rows, ["ID", "Product Handle", "Title", "Description", "SKU Setting"]);
+
+    if (!headerMatch) {
+      return null;
+    }
+
+    const dataRows = rows.slice(headerMatch.index + 1);
+    const productIdColumnIndex = headerMatch.headerMap[normalizeHeader("ID")] ?? 0;
+    const productHandleColumnIndex = headerMatch.headerMap[normalizeHeader("Product Handle")] ?? 1;
+    const titleColumnIndex = headerMatch.headerMap[normalizeHeader("Title")] ?? 2;
+    const descriptionColumnIndex = headerMatch.headerMap[normalizeHeader("Description")] ?? 3;
+    const variantSkuColumnIndex = headerMatch.headerMap[normalizeHeader("Variant SKU")] ?? 26;
+    const ringSetSkuColumnIndex = headerMatch.headerMap[normalizeHeader("Ring set SKU")] ?? 27;
+    const setSkuFixColumnIndex = headerMatch.headerMap[normalizeHeader("Set SKU fix")] ?? 28;
+
+    const matchingRows = dataRows.filter((row) => {
+      const rowId = normalizeDigits(row[productIdColumnIndex] ?? "");
+      const rowHandle = normalizeText(row[productHandleColumnIndex] ?? "");
+
+      return (
+        Boolean(resolvedReference.normalizedId && rowId === resolvedReference.normalizedId) ||
+        Boolean(resolvedReference.normalizedHandle && rowHandle === resolvedReference.normalizedHandle)
+      );
+    });
+
+    if (!matchingRows.length) {
+      return null;
+    }
+
+    const [stones, settings] = await Promise.all([this.getCachedStones(), this.getCachedSettings()]);
+    const stonesById = new Map(stones.map((stone) => [stone.stone_id.trim().toUpperCase(), stone]));
+    const settingsById = new Map(settings.map((setting) => [setting.setting_id.trim().toUpperCase(), setting]));
+    const variants = new Map<
+      string,
+      ProductCompositionVariant & {
+        stoneLineIndex: Map<string, number>;
+      }
+    >();
+
+    for (const row of matchingRows) {
+      const settingIds = extractMasterPopisiSettingSkus(valueAtColumn(row, 24));
+      const variantSku = valueAtColumn(row, variantSkuColumnIndex).trim();
+      const ringSetSku = valueAtColumn(row, ringSetSkuColumnIndex).trim();
+      const setSkuFix = valueAtColumn(row, setSkuFixColumnIndex).trim();
+      const metal = valueAtColumn(row, 22).trim();
+      const bandSize = valueAtColumn(row, 20).trim();
+      const settingStyle = valueAtColumn(row, 21).trim();
+      const additionalDescription = valueAtColumn(row, 23).trim();
+      const variantKey = buildVariantKey([variantSku, ringSetSku || setSkuFix, settingIds.join("|"), metal, bandSize]);
+
+      let variant = variants.get(variantKey);
+
+      if (!variant) {
+        variant = {
+          variant_key: variantKey,
+          variant_sku: variantSku,
+          ring_set_sku: ringSetSku,
+          set_sku_fix: setSkuFix,
+          metal,
+          band_size: bandSize,
+          setting_style: settingStyle,
+          additional_description: additionalDescription,
+          setting_ids: [],
+          settings: [],
+          stones: [],
+          source_row_count: 0,
+          stoneLineIndex: new Map<string, number>(),
+        };
+        variants.set(variantKey, variant);
+      }
+
+      variant.source_row_count += 1;
+
+      for (const settingId of settingIds) {
+        if (variant.setting_ids.includes(settingId)) {
+          continue;
+        }
+
+        variant.setting_ids.push(settingId);
+
+        const setting = settingsById.get(settingId);
+        if (setting) {
+          variant.settings.push(setting);
+        }
+      }
+
+      const appendStoneLine = (line: ProductCompositionStoneLine) => {
+        const lineKey = `${line.role}::${line.stone_id}`;
+        const existingIndex = variant?.stoneLineIndex.get(lineKey);
+
+        if (existingIndex !== undefined) {
+          variant!.stones[existingIndex] = {
+            ...variant!.stones[existingIndex],
+            quantity: variant!.stones[existingIndex].quantity + line.quantity,
+            stone: variant!.stones[existingIndex].stone ?? line.stone,
+          };
+          return;
+        }
+
+        variant!.stoneLineIndex.set(lineKey, variant!.stones.length);
+        variant!.stones.push(line);
+      };
+
+      const mainStoneId = valueAtColumn(row, 10).trim().toUpperCase();
+      const mainStoneQuantity = parseNumber(valueAtColumn(row, 11), 0);
+
+      if (mainStoneId && mainStoneQuantity > 0) {
+        appendStoneLine(
+          createProductStoneLine({
+            stoneId: mainStoneId,
+            quantity: mainStoneQuantity,
+            role: "main",
+            stone: stonesById.get(mainStoneId) ?? null,
+            label: valueAtColumn(row, 4).trim() || "Main stone",
+            shape: valueAtColumn(row, 5).trim(),
+            cut: valueAtColumn(row, 6).trim(),
+            quality: valueAtColumn(row, 8).trim(),
+            color: valueAtColumn(row, 9).trim(),
+            measurements: valueAtColumn(row, 7).trim(),
+          }),
+        );
+      }
+
+      const accentStoneId = valueAtColumn(row, 18).trim().toUpperCase();
+      const accentStoneQuantity = parseNumber(valueAtColumn(row, 19), 0);
+
+      if (accentStoneId && accentStoneQuantity > 0) {
+        appendStoneLine(
+          createProductStoneLine({
+            stoneId: accentStoneId,
+            quantity: accentStoneQuantity,
+            role: "accent",
+            stone: stonesById.get(accentStoneId) ?? null,
+            label: valueAtColumn(row, 12).trim() || "Accent stones",
+            shape: valueAtColumn(row, 13).trim(),
+            cut: valueAtColumn(row, 14).trim(),
+            quality: valueAtColumn(row, 15).trim(),
+            color: valueAtColumn(row, 16).trim(),
+            measurements: valueAtColumn(row, 17).trim(),
+          }),
+        );
+      }
+    }
+
+    const firstRow = matchingRows[0] ?? [];
+    const productId = normalizeDigits(valueAtColumn(firstRow, productIdColumnIndex)) || resolvedReference.normalizedId;
+    const productHandle = valueAtColumn(firstRow, productHandleColumnIndex).trim() || resolvedReference.normalizedHandle;
+    const title = valueAtColumn(firstRow, titleColumnIndex).trim() || productHandle;
+    const description = valueAtColumn(firstRow, descriptionColumnIndex).trim();
+    const variantList = Array.from(variants.values()).map(({ stoneLineIndex: _stoneLineIndex, ...variant }) => variant);
+    const defaultVariant =
+      [...variantList].sort((left, right) => {
+        const score = (variant: ProductCompositionVariant) => {
+          let value = 0;
+          if (variant.settings.some((setting) => setting.setting_id.includes("SRY4"))) value += 30;
+          if (variant.metal.toLowerCase().includes("14k")) value += 20;
+          if (variant.metal.toLowerCase().includes("yellow")) value += 10;
+          if (variant.variant_sku) value += 5;
+          return value;
+        };
+
+        return score(right) - score(left);
+      })[0] ?? variantList[0];
+
+    return {
+      reference: resolvedReference.raw,
+      matched_by: resolvedReference.matchedBy,
+      product_id: productId,
+      product_handle: productHandle,
+      title,
+      description,
+      default_variant_key: defaultVariant?.variant_key ?? "",
+      variants: variantList,
+    };
+  }
+
   async getPricingDefaults(): Promise<PricingDefaults> {
     return this.getCachedPricingDefaults();
   }
@@ -803,12 +1061,31 @@ export class SheetsRepository implements AppRepository {
 
   async listValuations(): Promise<ValuationRecord[]> {
     const database = await readActivityDatabase();
-    return database.valuations.sort((left, right) => right.created_at.localeCompare(left.created_at));
+    return database.valuations.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+  }
+
+  async findValuationById(valuationId: string): Promise<ValuationRecord | null> {
+    const database = await readActivityDatabase();
+    return database.valuations.find((valuation) => valuation.valuation_id === valuationId) ?? null;
   }
 
   async createValuation(valuation: ValuationRecord): Promise<ValuationRecord> {
     return mutateActivityDatabase(async (database) => {
       database.valuations.unshift(valuation);
+      return valuation;
+    });
+  }
+
+  async updateValuation(valuation: ValuationRecord): Promise<ValuationRecord> {
+    return mutateActivityDatabase(async (database) => {
+      const index = database.valuations.findIndex((entry) => entry.valuation_id === valuation.valuation_id);
+
+      if (index === -1) {
+        database.valuations.unshift(valuation);
+      } else {
+        database.valuations[index] = valuation;
+      }
+
       return valuation;
     });
   }

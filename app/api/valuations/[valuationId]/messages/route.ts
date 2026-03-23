@@ -6,17 +6,17 @@ import { getAppConfig } from "@/lib/config";
 import { getRepository } from "@/lib/repositories";
 import { type ValuationMessage, type ValuationRecord } from "@/lib/types";
 import { createRecordId, toIsoNow } from "@/lib/utils";
-import { valuationRequestSchema } from "@/lib/validators";
+import { valuationFollowUpSchema } from "@/lib/validators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function badRequest(error: unknown) {
   if (error instanceof ZodError) {
-    return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid valuation payload." }, { status: 400 });
+    return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid valuation follow-up payload." }, { status: 400 });
   }
 
-  const message = error instanceof Error ? error.message : "Unexpected valuation API error.";
+  const message = error instanceof Error ? error.message : "Unexpected valuation follow-up API error.";
   return NextResponse.json({ error: message }, { status: 500 });
 }
 
@@ -24,50 +24,63 @@ function buildAssistantMessageContent(record: Pick<ValuationRecord, "pricing_sum
   return [record.pricing_summary, record.reasoning, record.recommended_next_step].filter(Boolean).join("\n\n");
 }
 
-export async function GET() {
-  try {
-    const repository = getRepository();
-    const valuations = await repository.listValuations();
-    return NextResponse.json(valuations);
-  } catch (error) {
-    return badRequest(error);
-  }
-}
-
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  context: {
+    params: {
+      valuationId: string;
+    };
+  },
+) {
   try {
     const repository = getRepository();
     const config = getAppConfig();
-    const input = valuationRequestSchema.parse(await request.json());
+    const { valuationId } = context.params;
+    const valuation = await repository.findValuationById(valuationId);
+
+    if (!valuation) {
+      return NextResponse.json({ error: "Approximation not found." }, { status: 404 });
+    }
+
+    const input = valuationFollowUpSchema.parse(await request.json());
     const [stones, settings, pricingDefaults] = await Promise.all([
       repository.listStones(),
       repository.listSettings(),
       repository.getPricingDefaults(),
     ]);
 
-    const { estimate, provider } = await estimateValuation(input, {
-      stones,
-      settings,
-      defaults: {
-        goldPricePerGram: config.goldPricePerGram,
-        quoteMarginMultiplier: config.quoteMarginMultiplier,
-        metalPrices: pricingDefaults.metalPrices,
-        metalPricingSource: pricingDefaults.metalPricingSource,
-      },
-    });
-
     const createdAt = toIsoNow();
     const userMessage: ValuationMessage = {
       message_id: createRecordId("valuation_msg"),
       role: "user",
-      content: input.description,
+      content: input.message,
       created_at: createdAt,
     };
 
-    const valuation: ValuationRecord = {
-      valuation_id: createRecordId("valuation"),
+    const history = [...valuation.messages, userMessage];
+    const { estimate, provider } = await estimateValuation(
+      {
+        description: valuation.description,
+        reference_image_url: valuation.reference_image_url,
+        image_data_url: valuation.image_data_url,
+        created_by: input.created_by,
+      },
+      {
+        stones,
+        settings,
+        defaults: {
+          goldPricePerGram: config.goldPricePerGram,
+          quoteMarginMultiplier: config.quoteMarginMultiplier,
+          metalPrices: pricingDefaults.metalPrices,
+          metalPricingSource: pricingDefaults.metalPricingSource,
+        },
+      },
+      { history },
+    );
+
+    const updated: ValuationRecord = {
+      ...valuation,
       valuation_target: estimate.inferred_valuation_target,
-      description: input.description,
       stone_type: estimate.inferred_stone_type,
       stone_shape: estimate.inferred_stone_shape,
       stone_cut: estimate.inferred_stone_cut,
@@ -76,9 +89,6 @@ export async function POST(request: NextRequest) {
       carat: estimate.inferred_carat,
       complexity_level: estimate.inferred_complexity_level,
       gold_weight_g: estimate.inferred_gold_weight_g,
-      notes: "",
-      image_data_url: input.image_data_url,
-      reference_image_url: input.reference_image_url,
       estimated_value_low: estimate.estimated_value_low,
       estimated_value_high: estimate.estimated_value_high,
       estimated_stone_total: estimate.estimated_stone_total,
@@ -102,29 +112,27 @@ export async function POST(request: NextRequest) {
       grounding_search_queries: estimate.grounding_search_queries ?? [],
       grounding_sources: estimate.grounding_sources ?? [],
       provider,
-      created_by: input.created_by,
-      created_at: createdAt,
       updated_at: createdAt,
-      messages: [],
+      messages: history,
     };
 
     const assistantMessage: ValuationMessage = {
       message_id: createRecordId("valuation_msg"),
       role: "assistant",
-      content: buildAssistantMessageContent(valuation),
+      content: buildAssistantMessageContent(updated),
       created_at: createdAt,
-      estimated_value_low: valuation.estimated_value_low,
-      estimated_value_high: valuation.estimated_value_high,
-      estimated_formula_total: valuation.estimated_formula_total,
-      pricing_summary: valuation.pricing_summary,
-      reasoning: valuation.reasoning,
-      recommended_next_step: valuation.recommended_next_step,
+      estimated_value_low: updated.estimated_value_low,
+      estimated_value_high: updated.estimated_value_high,
+      estimated_formula_total: updated.estimated_formula_total,
+      pricing_summary: updated.pricing_summary,
+      reasoning: updated.reasoning,
+      recommended_next_step: updated.recommended_next_step,
     };
 
-    valuation.messages = [userMessage, assistantMessage];
+    updated.messages = [...history, assistantMessage];
 
-    const created = await repository.createValuation(valuation);
-    return NextResponse.json(created, { status: 201 });
+    const saved = await repository.updateValuation(updated);
+    return NextResponse.json(saved);
   } catch (error) {
     return badRequest(error);
   }

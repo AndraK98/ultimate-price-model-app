@@ -1,5 +1,6 @@
 import {
   type Inquiry,
+  type ProductComposition,
   type PricingDefaults,
   type ResolvedDataMode,
   type Setting,
@@ -18,9 +19,12 @@ export interface AppRepository {
   createSetting(setting: Setting): Promise<Setting>;
   findSettingById(settingId: string): Promise<Setting | null>;
   findSettingSkusByProductId(productId: string): Promise<string[]>;
+  findProductComposition(reference: string): Promise<ProductComposition | null>;
   getPricingDefaults(): Promise<PricingDefaults>;
   listInquiries(): Promise<Inquiry[]>;
   createInquiry(inquiry: Inquiry): Promise<Inquiry>;
   listValuations(): Promise<ValuationRecord[]>;
+  findValuationById(valuationId: string): Promise<ValuationRecord | null>;
   createValuation(valuation: ValuationRecord): Promise<ValuationRecord>;
+  updateValuation(valuation: ValuationRecord): Promise<ValuationRecord>;
 }

@@ -14,7 +14,17 @@ import {
   StatusPill,
 } from "@/components/dashboard-ui";
 import { calculateQuoteBreakdown } from "@/lib/services/quote-service";
-import { type DashboardSnapshot, type Inquiry, type PaginatedResult, type Setting, type Stone, type ValuationRecord } from "@/lib/types";
+import {
+  type DashboardSnapshot,
+  type Inquiry,
+  type PaginatedResult,
+  type ProductComposition,
+  type ProductCompositionVariant,
+  type Setting,
+  type Stone,
+  type ValuationMessage,
+  type ValuationRecord,
+} from "@/lib/types";
 import { formatStoneSize } from "@/lib/utils";
 
 type ProjectForm = {
@@ -43,6 +53,11 @@ type ToastItem = {
   id: string;
   message: string;
   tone: "success" | "error";
+};
+
+type RecallVariantSummary = {
+  missingStoneCount: number;
+  missingSettingCount: number;
 };
 
 type StoneBrowseFilters = {
@@ -225,6 +240,19 @@ function summarizeSelection(ids: string[]) {
   return `${ids.slice(0, 2).join(", ")} +${ids.length - 2} more`;
 }
 
+function buildAssistantMessagePreview(message: ValuationMessage) {
+  return message.pricing_summary || message.content;
+}
+
+function summarizeRecallVariant(variant: ProductCompositionVariant): RecallVariantSummary {
+  return {
+    missingStoneCount: variant.stones.filter((line) => !line.stone).length,
+    missingSettingCount: variant.setting_ids.filter(
+      (settingId) => !variant.settings.some((setting) => setting.setting_id === settingId),
+    ).length,
+  };
+}
+
 function countFilledFilters(filters: Record<string, string>) {
   return Object.values(filters).filter((value) => value.trim().length > 0).length;
 }
@@ -304,8 +332,14 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [selectedStoneQuantity, setSelectedStoneQuantity] = useState("1");
   const [projectStoneRefs, setProjectStoneRefs] = useState<ProjectStoneLine[]>([]);
   const [projectSettingRefs, setProjectSettingRefs] = useState<Setting[]>([]);
+  const [recallReference, setRecallReference] = useState("");
+  const [recallLoading, setRecallLoading] = useState(false);
+  const [recallNotice, setRecallNotice] = useState("");
+  const [recalledProduct, setRecalledProduct] = useState<ProductComposition | null>(null);
+  const [recalledVariantKey, setRecalledVariantKey] = useState("");
   const [projectNotice, setProjectNotice] = useState("");
   const [valuationNotice, setValuationNotice] = useState("");
+  const [valuationFollowUp, setValuationFollowUp] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [stoneError, setStoneError] = useState("");
   const [settingError, setSettingError] = useState("");
@@ -318,6 +352,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [valuationResult, setValuationResult] = useState<ValuationRecord | null>(initialSnapshot.valuations[0] ?? null);
   const [valuationModal, setValuationModal] = useState<ValuationRecord | null>(null);
   const [valuationLoading, setValuationLoading] = useState(false);
+  const [valuationFollowUpLoading, setValuationFollowUpLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const deferredStoneSearch = useDeferredValue(stoneSearch.trim());
@@ -531,6 +566,12 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const projectSettingIds = projectSettingRefs.map((setting) => setting.setting_id);
   const stoneActiveFilterCount = countFilledFilters(stoneBrowseFilters);
   const settingActiveFilterCount = countFilledFilters(settingBrowseFilters);
+  const activeRecalledVariant =
+    recalledProduct?.variants.find((variant) => variant.variant_key === recalledVariantKey) ??
+    recalledProduct?.variants[0] ??
+    null;
+  const valuationThread = valuationResult?.messages ?? [];
+  const valuationFollowUpMessages = valuationThread.slice(2);
 
   function attachStoneToProject(stone: Stone) {
     const quantity = parsePositiveQuantity(selectedStoneQuantity);
@@ -584,6 +625,68 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     setProjectForm((form) => ({ ...form, setting_id: next.map((setting) => setting.setting_id).join(", ") }));
   }
 
+  function upsertValuationRecord(next: ValuationRecord) {
+    setValuations((current) => {
+      const existingIndex = current.findIndex((valuation) => valuation.valuation_id === next.valuation_id);
+
+      if (existingIndex === -1) {
+        return [next, ...current];
+      }
+
+      const updated = [...current];
+      updated[existingIndex] = next;
+      return updated.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+    });
+    setValuationResult(next);
+    setValuationModal((current) => (current?.valuation_id === next.valuation_id ? next : current));
+  }
+
+  function applyRecalledVariant(composition: ProductComposition, variantKey: string) {
+    const variant =
+      composition.variants.find((candidate) => candidate.variant_key === variantKey) ??
+      composition.variants.find((candidate) => candidate.variant_key === composition.default_variant_key) ??
+      composition.variants[0];
+
+    if (!variant) {
+      setRecallNotice("That Shopify listing did not return any usable variant rows.");
+      pushToast("No usable variant rows were found for that listing.", "error");
+      return;
+    }
+
+    const nextProjectStoneRefs = variant.stones
+      .filter((line) => line.stone)
+      .map((line) => ({ stone: line.stone as Stone, quantity: line.quantity }));
+    const nextProjectSettingRefs = variant.settings;
+    const missing = summarizeRecallVariant(variant);
+
+    setRecalledProduct(composition);
+    setRecalledVariantKey(variant.variant_key);
+    setProjectStoneRefs(nextProjectStoneRefs);
+    setProjectSettingRefs(nextProjectSettingRefs);
+    setProjectForm((current) => ({
+      ...current,
+      customer_name: composition.title || current.customer_name,
+      stone_id: serializeStoneIds(nextProjectStoneRefs),
+      setting_id: nextProjectSettingRefs.map((setting) => setting.setting_id).join(", "),
+      reference_image_url: /^https?:\/\//i.test(recallReference.trim()) ? recallReference.trim() : current.reference_image_url,
+    }));
+    setSelectedStone(nextProjectStoneRefs[0]?.stone ?? selectedStone);
+    setSelectedSetting(nextProjectSettingRefs[0] ?? selectedSetting);
+
+    const noteParts = [
+      `Loaded ${composition.title || composition.product_handle}`,
+      `${nextProjectStoneRefs.length} stone SKU`,
+      `${nextProjectSettingRefs.length} setting SKU`,
+      missing.missingStoneCount > 0 ? `${missing.missingStoneCount} stone SKU still missing from catalog` : "",
+      missing.missingSettingCount > 0 ? `${missing.missingSettingCount} setting SKU still missing from catalog` : "",
+    ].filter(Boolean);
+
+    const message = noteParts.join(" | ");
+    setRecallNotice(message);
+    setProjectNotice(`Recalled ${composition.product_id} into the listing builder.`);
+    pushToast(message);
+  }
+
   function loadValuationIntoForm(valuation: ValuationRecord) {
     setValuationForm({
       description: valuation.description,
@@ -592,6 +695,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     });
     setValuationResult(valuation);
     setValuationModal(null);
+    setValuationFollowUp("");
     setValuationNotice(`Loaded approximation ${valuation.valuation_id} back into the form.`);
     pushToast(`Approximation ${valuation.valuation_id} loaded into the form.`);
   }
@@ -617,6 +721,27 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   function openValuationDetails(valuation: ValuationRecord) {
     setValuationResult(valuation);
     setValuationModal(valuation);
+  }
+
+  async function runRecall() {
+    if (!recallReference.trim()) {
+      pushToast("Paste a Shopify ID or product URL first.", "error");
+      return;
+    }
+
+    setRecallLoading(true);
+    setRecallNotice("");
+
+    try {
+      const composition = await getJson<ProductComposition>(`/api/recall?reference=${encodeURIComponent(recallReference.trim())}`);
+      applyRecalledVariant(composition, composition.default_variant_key);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not recall the Shopify listing.";
+      setRecallNotice(message);
+      pushToast(message, "error");
+    } finally {
+      setRecallLoading(false);
+    }
   }
 
   async function handleProjectSubmit(event: FormEvent<HTMLFormElement>) {
@@ -654,10 +779,10 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
         image_data_url: valuationForm.image_data_url,
       });
       startTransition(() => {
-        setValuations((current) => [created, ...current]);
-        setValuationResult(created);
+        upsertValuationRecord(created);
       });
       setValuationForm(blankValuation);
+      setValuationFollowUp("");
       setValuationNotice(
         `AI approximation logged with range ${money(created.estimated_value_low)} - ${money(created.estimated_value_high)}.`,
       );
@@ -665,6 +790,42 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       setValuationNotice(error instanceof Error ? error.message : "Could not run AI approximation.");
     } finally {
       setValuationLoading(false);
+    }
+  }
+
+  async function handleValuationFollowUpSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!valuationResult) {
+      pushToast("Run or select an approximation first.", "error");
+      return;
+    }
+
+    if (!valuationFollowUp.trim()) {
+      pushToast("Type a refinement for Gemini first.", "error");
+      return;
+    }
+
+    setValuationFollowUpLoading(true);
+    setValuationNotice("");
+
+    try {
+      const updated = await postJson<ValuationRecord>(
+        `/api/valuations/${encodeURIComponent(valuationResult.valuation_id)}/messages`,
+        { message: valuationFollowUp.trim() },
+      );
+      startTransition(() => {
+        upsertValuationRecord(updated);
+      });
+      setValuationFollowUp("");
+      setValuationNotice(`Gemini refined approximation ${updated.valuation_id}.`);
+      pushToast(`Gemini updated ${updated.valuation_id}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not refine the approximation.";
+      setValuationNotice(message);
+      pushToast(message, "error");
+    } finally {
+      setValuationFollowUpLoading(false);
     }
   }
 
@@ -1079,6 +1240,90 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     <SectionCard eyebrow="Listing" title="Custom listing">
       <div className="section-grid section-grid--two">
         <form className="stack" onSubmit={handleProjectSubmit}>
+          <div className="detail-card detail-card--recall">
+            <div className="detail-heading">
+              <div>
+                <h3>Recall by Shopify ID / URL</h3>
+              </div>
+              {recalledProduct ? <StatusPill>{recalledProduct.matched_by}</StatusPill> : null}
+            </div>
+            <div className="stack">
+              <div className="recall-grid">
+                <Field label="Shopify ID or product URL">
+                  <input
+                    className="field-control"
+                    value={recallReference}
+                    onChange={(event) => setRecallReference(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void runRecall();
+                      }
+                    }}
+                    placeholder="6563780034603 or https://www.capucinne.com/products/..."
+                  />
+                </Field>
+                <div className="action-row action-row--end">
+                  <button className="button" type="button" disabled={recallLoading} onClick={() => void runRecall()}>
+                    {recallLoading ? "Recalling..." : "Recall setup"}
+                  </button>
+                </div>
+              </div>
+              {recallNotice ? <p className="inline-note">{recallNotice}</p> : null}
+              {recalledProduct ? (
+                <>
+                  <dl className="detail-grid detail-grid--compact">
+                    <DetailItem label="Shopify ID" value={recalledProduct.product_id} />
+                    <DetailItem label="Handle" value={recalledProduct.product_handle || "Not set"} />
+                    <DetailItem label="Title" value={recalledProduct.title || "Not set"} />
+                    <DetailItem label="Variants" value={String(recalledProduct.variants.length)} />
+                  </dl>
+                  {recalledProduct.variants.length > 1 ? (
+                    <Field label="Variant line">
+                      <select
+                        className="field-control"
+                        value={recalledVariantKey}
+                        onChange={(event) => {
+                          setRecalledVariantKey(event.target.value);
+                          applyRecalledVariant(recalledProduct, event.target.value);
+                        }}
+                      >
+                        {recalledProduct.variants.map((variant) => (
+                          <option key={variant.variant_key} value={variant.variant_key}>
+                            {[variant.variant_sku, variant.metal, variant.setting_ids.join(", ")].filter(Boolean).join(" | ")}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : null}
+                  {activeRecalledVariant ? (
+                    <div className="detail-block">
+                      <h4>Recalled setup</h4>
+                      <p className="detail-note">
+                        {activeRecalledVariant.setting_ids.length
+                          ? `Settings: ${activeRecalledVariant.setting_ids.join(", ")}`
+                          : "No setting SKU found on this row."}
+                      </p>
+                      <div className="selection-token-list">
+                        {activeRecalledVariant.stones.map((line) => (
+                          <article key={`${line.role}-${line.stone_id}`} className="selection-token">
+                            <div className="selection-token__meta">
+                              <strong>{line.stone_id || "Missing stone SKU"}</strong>
+                              <span>
+                                {line.label} | Qty {line.quantity}
+                                {line.measurements ? ` | ${line.measurements}` : ""}
+                                {line.stone ? ` | ${line.stone.name}` : " | Missing from catalog"}
+                              </span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          </div>
           <div className="project-selection-grid">
             <SelectionCard
               title="Stones in project"
@@ -1267,7 +1512,11 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               <div>
                 <h3>Latest approximation</h3>
               </div>
-              {valuationLoading ? <StatusPill tone="rose">thinking</StatusPill> : valuationResult ? <StatusPill>{valuationResult.provider}</StatusPill> : null}
+              {valuationLoading || valuationFollowUpLoading ? (
+                <StatusPill tone="rose">thinking</StatusPill>
+              ) : valuationResult ? (
+                <StatusPill>{valuationResult.provider}</StatusPill>
+              ) : null}
             </div>
             <div key={valuationLoading ? "thinking" : valuationResult?.valuation_id ?? "empty"} className="ai-response-frame">
             {valuationLoading ? (
@@ -1324,9 +1573,9 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                   </div>
                 </div>
                 <div className="quote-grid">
-                  <QuoteItem label="Low estimate" value={money(valuationResult.estimated_value_low)} />
-                  <QuoteItem label="High estimate" value={money(valuationResult.estimated_value_high)} />
-                  <QuoteItem label="Midpoint" value={money(midpoint(valuationResult.estimated_value_low, valuationResult.estimated_value_high))} highlight />
+                  <QuoteItem label="Stone subtotal" value={money(valuationResult.estimated_stone_total)} />
+                  <QuoteItem label="Setting subtotal" value={money(valuationResult.estimated_setting_total)} />
+                  <QuoteItem label="Formula estimate" value={money(valuationResult.estimated_formula_total || midpoint(valuationResult.estimated_value_low, valuationResult.estimated_value_high))} highlight />
                 </div>
                 <div className="detail-block">
                   <h4>Gemini response</h4>
@@ -1334,10 +1583,44 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                   <p className="detail-note">{valuationResult.reasoning}</p>
                   <p className="detail-note">{valuationResult.recommended_next_step}</p>
                 </div>
-                <div className="action-row action-row--compact">
-                  <InlineButton onClick={() => loadValuationIntoForm(valuationResult)}>Load into approximation</InlineButton>
-                  <InlineButton onClick={() => openValuationDetails(valuationResult)}>Open details</InlineButton>
-                </div>
+                {valuationFollowUpMessages.length ? (
+                  <div className="detail-block">
+                    <h4>Refinements</h4>
+                    <div className="conversation-thread">
+                      {valuationFollowUpMessages.map((message) => (
+                        <article
+                          key={message.message_id}
+                          className={`conversation-message conversation-message--${message.role}`}
+                        >
+                          <span className="conversation-message__role">{message.role === "user" ? "You" : "Gemini"}</span>
+                          <p>{message.role === "assistant" ? buildAssistantMessagePreview(message) : message.content}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <form className="stack" onSubmit={handleValuationFollowUpSubmit}>
+                  <Field label="Continue this approximation">
+                    <textarea
+                      className="field-control field-control--textarea"
+                      rows={3}
+                      value={valuationFollowUp}
+                      onChange={(event) => setValuationFollowUp(event.target.value)}
+                      placeholder="Same ring, but all lab dia. Keep the setting and replace the side stones."
+                    />
+                  </Field>
+                  <div className="action-row action-row--compact">
+                    <button
+                      className="button"
+                      type="submit"
+                      disabled={valuationFollowUpLoading || !valuationResult}
+                    >
+                      {valuationFollowUpLoading ? "Refining..." : "Continue with Gemini"}
+                    </button>
+                    <InlineButton onClick={() => loadValuationIntoForm(valuationResult)}>Load into approximation</InlineButton>
+                    <InlineButton onClick={() => openValuationDetails(valuationResult)}>Open details</InlineButton>
+                  </div>
+                </form>
               </>
             ) : (
               <p className="empty-state">No approximation yet.</p>
@@ -1347,7 +1630,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
           <div className="table-card">
             <div className="table-card__header"><h3>Log</h3><span>{valuations.length}</span></div>
             <table className="data-table">
-              <thead><tr><th>Description</th><th>Range</th><th>Provider</th><th>Logged</th></tr></thead>
+              <thead><tr><th>Description</th><th>Estimate</th><th>Provider</th><th>Updated</th></tr></thead>
               <tbody>
                 {valuations.slice(0, 6).map((valuation) => (
                   <tr key={valuation.valuation_id} onClick={() => openValuationDetails(valuation)}>
@@ -1355,9 +1638,9 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                       <strong>{excerpt(valuation.description)}</strong>
                       <span>{valuation.valuation_id}</span>
                     </td>
-                    <td>{money(valuation.estimated_value_low)} - {money(valuation.estimated_value_high)}</td>
+                    <td>{money(valuation.estimated_formula_total || midpoint(valuation.estimated_value_low, valuation.estimated_value_high))}</td>
                     <td>{valuation.provider}</td>
-                    <td>{stamp(valuation.created_at)}</td>
+                    <td>{stamp(valuation.updated_at || valuation.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1407,12 +1690,12 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                 <MediaPreview src={valuationModal.reference_image_url} alt="Reference image" />
                 <MediaPreview src={valuationModal.image_data_url} alt="Uploaded image" />
               </div>
-              <p className="detail-note">Logged {stamp(valuationModal.created_at)}</p>
+              <p className="detail-note">Updated {stamp(valuationModal.updated_at || valuationModal.created_at)}</p>
             </div>
             <div className="quote-grid">
-              <QuoteItem label="Low estimate" value={money(valuationModal.estimated_value_low)} />
-              <QuoteItem label="High estimate" value={money(valuationModal.estimated_value_high)} />
-              <QuoteItem label="Midpoint" value={money(midpoint(valuationModal.estimated_value_low, valuationModal.estimated_value_high))} highlight />
+              <QuoteItem label="Stone subtotal" value={money(valuationModal.estimated_stone_total)} />
+              <QuoteItem label="Setting subtotal" value={money(valuationModal.estimated_setting_total)} />
+              <QuoteItem label="Formula estimate" value={money(valuationModal.estimated_formula_total || midpoint(valuationModal.estimated_value_low, valuationModal.estimated_value_high))} highlight />
             </div>
             <div className="detail-block">
               <h4>Gemini response</h4>
@@ -1420,6 +1703,22 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               <p className="detail-note">{valuationModal.reasoning}</p>
               <p className="detail-note">{valuationModal.recommended_next_step}</p>
             </div>
+            {valuationModal.messages.length > 2 ? (
+              <div className="detail-block">
+                <h4>Refinements</h4>
+                <div className="conversation-thread">
+                  {valuationModal.messages.slice(2).map((message) => (
+                    <article
+                      key={message.message_id}
+                      className={`conversation-message conversation-message--${message.role}`}
+                    >
+                      <span className="conversation-message__role">{message.role === "user" ? "You" : "Gemini"}</span>
+                      <p>{message.role === "assistant" ? buildAssistantMessagePreview(message) : message.content}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="modal-actions">
               <button className="button" type="button" onClick={() => loadValuationIntoForm(valuationModal)}>
                 Load into approximation

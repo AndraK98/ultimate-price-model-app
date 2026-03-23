@@ -105,6 +105,10 @@ export const valuationResolvedDetailsSchema = z.object({
 export const valuationEstimateSchema = z.object({
   estimated_value_low: valuationNumericField.default(0),
   estimated_value_high: valuationNumericField.default(0),
+  estimated_stone_total: valuationNumericField.default(0),
+  estimated_setting_total: valuationNumericField.default(0),
+  inferred_complexity_multiplier: valuationNumericField.default(0),
+  estimated_formula_total: valuationNumericField.default(0),
   pricing_summary: z.string().trim().min(1).default("No pricing summary logged."),
   reasoning: z.string().trim().min(1),
   recommended_next_step: z.string().trim().min(1),
@@ -123,12 +127,30 @@ export const valuationEstimateSchema = z.object({
   grounding_sources: z.array(groundingSourceSchema).default([]),
 });
 
+export const valuationMessageSchema = z.object({
+  message_id: z.string().trim().min(1),
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1),
+  created_at: z.string().trim().min(1),
+  estimated_value_low: valuationNumericField.optional(),
+  estimated_value_high: valuationNumericField.optional(),
+  estimated_formula_total: valuationNumericField.optional(),
+  pricing_summary: z.string().trim().optional(),
+  reasoning: z.string().trim().optional(),
+  recommended_next_step: z.string().trim().optional(),
+});
+
 const optionalTextField = z.string().trim().optional();
 const optionalNumericField = z.coerce.number().finite().nonnegative().optional();
 
 export const catalogSearchAssistRequestSchema = z.object({
   target: z.enum(["stone", "setting"]),
   query: z.string().trim().min(1),
+});
+
+export const valuationFollowUpSchema = z.object({
+  message: z.string().trim().min(1),
+  created_by: z.string().trim().default("atelier-team"),
 });
 
 export const stoneSearchAssistFiltersSchema = z.object({

@@ -240,8 +240,12 @@ export const mockSeed: MockDatabase = {
       notes: "Reference from bespoke showroom request.",
       estimated_value_low: 2850,
       estimated_value_high: 3640,
+      estimated_stone_total: 2625,
+      estimated_setting_total: 110,
+      inferred_complexity_multiplier: 2.8,
+      estimated_formula_total: 7658,
       pricing_summary:
-        "Stone basis: matched catalog stone NSDIWBO019 at $2,625.00. Setting basis: matched catalog setting SRY4HAS003 at $110.00, with 14K yellow gold at 2.8 g used as the metal anchor. Range widened for halo detail and center-stone variation.",
+        "Stone subtotal 2625 USD. Setting subtotal 110 USD. Complexity 3 uses 2.8x. Formula total 7658 USD.",
       reasoning:
         "Matched to the oval natural diamond profile and a halo setting already used in the atelier baseline. Range allows for halo labor and center-stone variation.",
       recommended_next_step: "Confirm certificate grade and halo stone count before issuing a final customer quote.",
@@ -261,6 +265,29 @@ export const mockSeed: MockDatabase = {
       provider: "gemini",
       created_by: "atelier-team",
       created_at: "2026-03-15T13:00:00.000Z",
+      updated_at: "2026-03-15T13:00:00.000Z",
+      messages: [
+        {
+          message_id: "valuation_demo_001_user",
+          role: "user",
+          content: "Oval halo ring with 1.5ct natural diamond center and pave halo.",
+          created_at: "2026-03-15T13:00:00.000Z",
+        },
+        {
+          message_id: "valuation_demo_001_assistant",
+          role: "assistant",
+          content:
+            "Stone subtotal 2625 USD. Setting subtotal 110 USD. Complexity 3 uses 2.8x. Formula total 7658 USD.\n\nMatched to the oval natural diamond profile and a halo setting already used in the atelier baseline. Range allows for halo labor and center-stone variation.\n\nConfirm certificate grade and halo stone count before issuing a final customer quote.",
+          created_at: "2026-03-15T13:00:00.000Z",
+          estimated_value_low: 2850,
+          estimated_value_high: 3640,
+          estimated_formula_total: 7658,
+          pricing_summary: "Stone subtotal 2625 USD. Setting subtotal 110 USD. Complexity 3 uses 2.8x. Formula total 7658 USD.",
+          reasoning:
+            "Matched to the oval natural diamond profile and a halo setting already used in the atelier baseline. Range allows for halo labor and center-stone variation.",
+          recommended_next_step: "Confirm certificate grade and halo stone count before issuing a final customer quote.",
+        },
+      ],
     },
   ],
 };

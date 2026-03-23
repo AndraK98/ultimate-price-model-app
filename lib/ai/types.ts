@@ -5,6 +5,7 @@ import {
   type StoneFilters,
   type Stone,
   type ValuationEstimate,
+  type ValuationMessage,
   type ValuationProviderName,
   type ValuationRequestInput,
 } from "@/lib/types";
@@ -22,7 +23,11 @@ export interface ValuationCatalogContext {
 
 export interface ValuationProvider {
   providerName: ValuationProviderName;
-  estimate(input: ValuationRequestInput, context: ValuationCatalogContext): Promise<ValuationEstimate>;
+  estimate(
+    input: ValuationRequestInput,
+    context: ValuationCatalogContext,
+    options?: { history?: ValuationMessage[] },
+  ): Promise<ValuationEstimate>;
 }
 
 export type CatalogSearchAssistTarget = "stone" | "setting";

@@ -3,6 +3,7 @@ export type ResolvedDataMode = "mock" | "sheets";
 export type ValuationProviderName = "gemini";
 export type MetalFamily = "gold" | "silver" | "platinum" | "mixed" | "unknown";
 export type ValuationTarget = "stone" | "setting" | "piece";
+export type ValuationMessageRole = "user" | "assistant";
 
 export interface GroundingSource {
   title: string;
@@ -124,6 +125,10 @@ export interface ValuationResolvedDetails {
 export interface ValuationEstimate {
   estimated_value_low: number;
   estimated_value_high: number;
+  estimated_stone_total: number;
+  estimated_setting_total: number;
+  inferred_complexity_multiplier: number;
+  estimated_formula_total: number;
   pricing_summary: string;
   reasoning: string;
   recommended_next_step: string;
@@ -142,10 +147,64 @@ export interface ValuationEstimate {
   grounding_sources: GroundingSource[];
 }
 
+export interface ValuationMessage {
+  message_id: string;
+  role: ValuationMessageRole;
+  content: string;
+  created_at: string;
+  estimated_value_low?: number;
+  estimated_value_high?: number;
+  estimated_formula_total?: number;
+  pricing_summary?: string;
+  reasoning?: string;
+  recommended_next_step?: string;
+}
+
 export interface ValuationRecord extends ValuationRequestInput, ValuationResolvedDetails, ValuationEstimate {
   valuation_id: string;
   provider: ValuationProviderName;
   created_at: string;
+  updated_at: string;
+  messages: ValuationMessage[];
+}
+
+export interface ProductCompositionStoneLine {
+  stone_id: string;
+  quantity: number;
+  role: "main" | "accent";
+  stone: Stone | null;
+  label: string;
+  shape: string;
+  cut: string;
+  quality: string;
+  color: string;
+  measurements: string;
+}
+
+export interface ProductCompositionVariant {
+  variant_key: string;
+  variant_sku: string;
+  ring_set_sku: string;
+  set_sku_fix: string;
+  metal: string;
+  band_size: string;
+  setting_style: string;
+  additional_description: string;
+  setting_ids: string[];
+  settings: Setting[];
+  stones: ProductCompositionStoneLine[];
+  source_row_count: number;
+}
+
+export interface ProductComposition {
+  reference: string;
+  matched_by: "id" | "handle" | "url";
+  product_id: string;
+  product_handle: string;
+  title: string;
+  description: string;
+  default_variant_key: string;
+  variants: ProductCompositionVariant[];
 }
 
 export interface DashboardKpis {

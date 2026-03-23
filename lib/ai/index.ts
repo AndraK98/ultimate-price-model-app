@@ -2,9 +2,25 @@ import { GeminiCatalogSearchAssistProvider } from "@/lib/ai/providers/gemini-cat
 import { GeminiValuationProvider } from "@/lib/ai/providers/gemini-valuation-provider";
 import { type CatalogSearchAssistRequest, type CatalogSearchAssistResult, type ValuationCatalogContext } from "@/lib/ai/types";
 import { getAppConfig } from "@/lib/config";
-import { type ValuationEstimate, type ValuationProviderName, type ValuationRequestInput } from "@/lib/types";
+import { type ValuationEstimate, type ValuationMessage, type ValuationProviderName, type ValuationRequestInput } from "@/lib/types";
 
 export async function estimateValuation(input: ValuationRequestInput, context: ValuationCatalogContext): Promise<{
+  estimate: ValuationEstimate;
+  provider: ValuationProviderName;
+}>;
+export async function estimateValuation(
+  input: ValuationRequestInput,
+  context: ValuationCatalogContext,
+  options: { history?: ValuationMessage[] },
+): Promise<{
+  estimate: ValuationEstimate;
+  provider: ValuationProviderName;
+}>;
+export async function estimateValuation(
+  input: ValuationRequestInput,
+  context: ValuationCatalogContext,
+  options?: { history?: ValuationMessage[] },
+): Promise<{
   estimate: ValuationEstimate;
   provider: ValuationProviderName;
 }> {
@@ -15,7 +31,7 @@ export async function estimateValuation(input: ValuationRequestInput, context: V
   }
 
   const provider = new GeminiValuationProvider(config.gemini.apiKey, config.gemini.model);
-  const estimate = await provider.estimate(input, context);
+  const estimate = await provider.estimate(input, context, options);
   return {
     estimate,
     provider: "gemini",

@@ -9,6 +9,7 @@ import {
   settingInputSchema,
   stoneInputSchema,
   valuationEstimateSchema,
+  valuationMessageSchema,
   valuationRequestSchema,
   valuationResolvedDetailsSchema,
 } from "@/lib/validators";
@@ -41,6 +42,8 @@ const valuationRecordSchema = valuationRequestSchema.merge(valuationResolvedDeta
   valuation_id: z.string().trim().min(1),
   provider: z.literal("gemini"),
   created_at: z.string().trim().min(1),
+  updated_at: z.string().trim().min(1),
+  messages: z.array(valuationMessageSchema).default([]),
 });
 
 const mockDatabaseSchema = z.object({
@@ -51,6 +54,27 @@ const mockDatabaseSchema = z.object({
 });
 
 let writeQueue = Promise.resolve();
+
+function buildLegacyAssistantMessage(valuation: Record<string, unknown>) {
+  const createdAt = String(valuation.created_at ?? "").trim();
+  const pricingSummary = String(valuation.pricing_summary ?? "").trim();
+  const reasoning = String(valuation.reasoning ?? "").trim();
+  const recommendedNextStep = String(valuation.recommended_next_step ?? "").trim();
+  const assistantBody = [pricingSummary, reasoning, recommendedNextStep].filter(Boolean).join("\n\n");
+
+  return {
+    message_id: String(valuation.valuation_id ?? "valuation").trim() || "valuation",
+    role: "assistant" as const,
+    content: assistantBody || "Gemini approximation logged.",
+    created_at: createdAt || new Date().toISOString(),
+    estimated_value_low: valuation.estimated_value_low,
+    estimated_value_high: valuation.estimated_value_high,
+    estimated_formula_total: valuation.estimated_formula_total,
+    pricing_summary: pricingSummary,
+    reasoning,
+    recommended_next_step: recommendedNextStep,
+  };
+}
 
 function normalizeLegacyMockDatabase(database: unknown): unknown {
   if (!database || typeof database !== "object") {
@@ -67,10 +91,33 @@ function normalizeLegacyMockDatabase(database: unknown): unknown {
   return {
     ...source,
     valuations: Array.isArray(source.valuations)
-      ? source.valuations.map((valuation) => ({
-          ...valuation,
-          provider: "gemini",
-        }))
+      ? source.valuations.map((valuation) => {
+          const createdAt = String(valuation.created_at ?? "").trim() || new Date().toISOString();
+          const description = String(valuation.description ?? "").trim();
+          const messages =
+            Array.isArray(valuation.messages) && valuation.messages.length > 0
+              ? valuation.messages
+              : [
+                  ...(description
+                    ? [
+                        {
+                          message_id: `${String(valuation.valuation_id ?? "valuation").trim() || "valuation"}_user`,
+                          role: "user" as const,
+                          content: description,
+                          created_at: createdAt,
+                        },
+                      ]
+                    : []),
+                  buildLegacyAssistantMessage(valuation),
+                ];
+
+          return {
+            ...valuation,
+            provider: "gemini",
+            updated_at: String(valuation.updated_at ?? "").trim() || createdAt,
+            messages,
+          };
+        })
       : source.valuations,
   };
 }

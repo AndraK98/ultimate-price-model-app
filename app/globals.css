@@ -151,6 +151,17 @@ textarea {
 
 button {
   cursor: pointer;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    opacity 180ms ease;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
 }
 
 a {
@@ -445,10 +456,19 @@ a {
   border-radius: 16px;
   background: rgba(246, 236, 234, 0.86);
   text-align: left;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .catalog-suggestion:hover {
   background: var(--colorHoverLight);
+  box-shadow: 0 10px 22px rgba(54, 40, 34, 0.08);
+}
+
+.catalog-suggestion:active {
+  transform: translateY(1px) scale(0.99);
 }
 
 .catalog-suggestion strong {
@@ -610,6 +630,73 @@ a {
   background: rgba(246, 236, 234, 0.74);
 }
 
+.ai-response-frame {
+  animation: fade-slide-in 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.thinking-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(212, 162, 152, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.thinking-panel__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--forest);
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.thinking-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--colorCapucinne);
+  opacity: 0.34;
+  animation: thinking-bounce 1.05s infinite ease-in-out;
+}
+
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.thinking-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.thinking-line {
+  display: block;
+  height: 12px;
+  background: linear-gradient(90deg, rgba(212, 162, 152, 0.18) 25%, rgba(212, 162, 152, 0.44) 50%, rgba(212, 162, 152, 0.18) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.35s linear infinite;
+}
+
+.thinking-line--long {
+  width: 100%;
+}
+
+.thinking-line--mid {
+  width: 78%;
+}
+
+.thinking-line--short {
+  width: 56%;
+}
+
 .detail-block h4 {
   margin: 0 0 8px;
   font-size: 0.94rem;
@@ -702,7 +789,8 @@ a {
 }
 
 .button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(212, 162, 152, 0.28);
 }
 
 .button:disabled {
@@ -727,6 +815,8 @@ a {
 .inline-button:hover:not(:disabled),
 .pagination-button:hover:not(:disabled) {
   background: rgba(246, 236, 234, 0.86);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(54, 40, 34, 0.08);
 }
 
 .inline-button:disabled,
@@ -929,6 +1019,87 @@ a {
   word-break: break-word;
 }
 
+@keyframes thinking-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.28;
+  }
+
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detail-card--recall {
+  padding: 14px;
+}
+
+.recall-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.action-row--end {
+  justify-content: flex-end;
+}
+
+.conversation-thread {
+  display: grid;
+  gap: 10px;
+}
+
+.conversation-message {
+  padding: 10px 12px;
+  border: 1px solid rgba(212, 162, 152, 0.22);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.conversation-message--assistant {
+  background: rgba(246, 236, 234, 0.76);
+}
+
+.conversation-message__role {
+  display: inline-block;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--colorCapucinne);
+}
+
+.conversation-message p {
+  margin: 0;
+  line-height: 1.55;
+}
+
 @media (min-width: 981px) {
   .form-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -991,6 +1162,10 @@ a {
   }
 
   .valuation-media-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recall-grid {
     grid-template-columns: 1fr;
   }
 }

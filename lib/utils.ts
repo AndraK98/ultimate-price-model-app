@@ -15,6 +15,25 @@ export function normalizeText(value: string): string {
   return value.trim().toLowerCase();
 }
 
+export function normalizeDigits(value: string): string {
+  return value.replace(/\D+/g, "");
+}
+
+export function extractShopifyProductHandle(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const match = trimmed.match(/\/products\/([^/?#]+)/i);
+  if (match?.[1]) {
+    return normalizeText(match[1]);
+  }
+
+  return normalizeText(trimmed.replace(/^\/+|\/+$/g, ""));
+}
+
 export function hasText(value: string | null | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }

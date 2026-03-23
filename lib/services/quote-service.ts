@@ -9,6 +9,10 @@ const complexityMultiplierMap: Record<number, number> = {
   5: 3.0,
 };
 
+export function getComplexityMultiplier(complexityLevel: number): number {
+  return complexityMultiplierMap[Math.round(complexityLevel)] ?? 2.8;
+}
+
 function containsMultiSettingReference(referenceText?: string): boolean {
   return typeof referenceText === "string" && referenceText.includes(",");
 }
@@ -156,8 +160,7 @@ function resolveQuoteMarginMultiplier(settings: Setting[], settingReferenceText?
     return 2.8;
   }
 
-  const complexityLevel = Math.round(settings[0]?.complexity_level ?? 0);
-  return complexityMultiplierMap[complexityLevel] ?? 2.8;
+  return getComplexityMultiplier(settings[0]?.complexity_level ?? 0);
 }
 
 function resolve18kSettingDelta(settings: Setting[]): {
