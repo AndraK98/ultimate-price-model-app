@@ -61,6 +61,7 @@ type RecallVariantSummary = {
 };
 
 type StoneBrowseFilters = {
+  productId: string;
   stoneId: string;
   name: string;
   shape: string;
@@ -140,6 +141,7 @@ const blankValuation: ValuationForm = {
 };
 
 const blankStoneBrowseFilters: StoneBrowseFilters = {
+  productId: "",
   stoneId: "",
   name: "",
   shape: "",
@@ -374,6 +376,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   function applyStoneAssistFilters(filters: StoneAssistFilters) {
     setStoneBrowseFilters({
       ...blankStoneBrowseFilters,
+      productId: stoneBrowseFilters.productId,
       stoneId: stringifyFilterValue(filters.stoneId),
       name: stringifyFilterValue(filters.name),
       shape: stringifyFilterValue(filters.shape),
@@ -391,6 +394,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   function applySettingAssistFilters(filters: SettingAssistFilters) {
     setSettingBrowseFilters({
       ...blankSettingBrowseFilters,
+      productId: settingBrowseFilters.productId,
       settingId: stringifyFilterValue(filters.settingId),
       style: stringifyFilterValue(filters.style),
       metal: stringifyFilterValue(filters.metal),
@@ -846,6 +850,14 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
           filters={
             <>
               <div className="catalog-filter-grid">
+                <Field label="Shopify ID / URL">
+                  <input
+                    className="field-control"
+                    value={stoneBrowseFilters.productId}
+                    onChange={(event) => updateStoneBrowseFilter("productId", event.target.value)}
+                    placeholder="6563780034603 or https://..."
+                  />
+                </Field>
                 <Field label="SKU">
                   <input
                     className="field-control"
@@ -1040,12 +1052,12 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
           filters={
             <>
               <div className="catalog-filter-grid">
-                <Field label="Product ID">
+                <Field label="Shopify ID / URL">
                   <input
                     className="field-control"
                     value={settingBrowseFilters.productId}
                     onChange={(event) => updateSettingBrowseFilter("productId", event.target.value)}
-                    placeholder="Shopify ID"
+                    placeholder="6563780034603 or https://..."
                   />
                 </Field>
                 <Field label="SKU">

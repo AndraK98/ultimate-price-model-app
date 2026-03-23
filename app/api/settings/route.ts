@@ -26,10 +26,13 @@ export async function GET(request: NextRequest) {
     );
     const pageSize = allowedPageSizes.has(requestedPageSize) ? requestedPageSize : 20;
     const page = Math.max(1, parseInteger(request.nextUrl.searchParams.get("page"), 1));
-    const productId = request.nextUrl.searchParams.get("productId")?.trim() ?? "";
-    const settingIds = productId ? await repository.findSettingSkusByProductId(productId) : undefined;
+    const productReference = request.nextUrl.searchParams.get("productId")?.trim() ?? "";
+    const composition = productReference ? await repository.findProductComposition(productReference) : null;
+    const settingIds = composition
+      ? Array.from(new Set(composition.variants.flatMap((variant) => variant.setting_ids)))
+      : undefined;
 
-    if (productId && !settingIds?.length) {
+    if (productReference && !settingIds?.length) {
       return NextResponse.json(paginateItems([], page, pageSize));
     }
 

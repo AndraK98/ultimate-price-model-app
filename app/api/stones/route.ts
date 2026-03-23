@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     );
     const pageSize = allowedPageSizes.has(requestedPageSize) ? requestedPageSize : 20;
     const page = Math.max(1, parseInteger(request.nextUrl.searchParams.get("page"), 1));
+    const productReference = request.nextUrl.searchParams.get("productId")?.trim() ?? "";
     const filters = {
       query: request.nextUrl.searchParams.get("query") ?? undefined,
       stoneId: request.nextUrl.searchParams.get("stoneId") ?? undefined,
@@ -41,7 +42,25 @@ export async function GET(request: NextRequest) {
     };
 
     const stones = await repository.listStones(filters);
-    return NextResponse.json(paginateItems(stones, page, pageSize));
+
+    if (!productReference) {
+      return NextResponse.json(paginateItems(stones, page, pageSize));
+    }
+
+    const composition = await repository.findProductComposition(productReference);
+
+    if (!composition) {
+      return NextResponse.json(paginateItems([], page, pageSize));
+    }
+
+    const recalledStoneIds = new Set(
+      composition.variants.flatMap((variant) =>
+        variant.stones.map((line) => line.stone_id.trim().toUpperCase()).filter(Boolean),
+      ),
+    );
+    const filteredStones = stones.filter((stone) => recalledStoneIds.has(stone.stone_id.trim().toUpperCase()));
+
+    return NextResponse.json(paginateItems(filteredStones, page, pageSize));
   } catch (error) {
     return badRequest(error);
   }
