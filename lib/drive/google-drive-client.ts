@@ -111,6 +111,7 @@ export class GoogleDriveClient {
     method: "POST" | "PATCH",
     metadata: Record<string, unknown>,
     content: string,
+    contentMimeType: string,
     fileId?: string,
   ): Promise<T> {
     const boundary = `capucinne_${crypto.randomUUID()}`;
@@ -119,7 +120,7 @@ export class GoogleDriveClient {
       "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
       `${JSON.stringify(metadata)}\r\n` +
       `--${boundary}\r\n` +
-      "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+      `Content-Type: ${contentMimeType}; charset=UTF-8\r\n\r\n` +
       `${content}\r\n` +
       `--${boundary}--`;
 
@@ -212,6 +213,7 @@ export class GoogleDriveClient {
         mimeType: "application/json",
       },
       JSON.stringify(content, null, 2),
+      "application/json",
     );
   }
 
@@ -223,6 +225,33 @@ export class GoogleDriveClient {
         mimeType: "application/json",
       },
       JSON.stringify(content, null, 2),
+      "application/json",
+      fileId,
+    );
+  }
+
+  async createTextFile(parentId: string, name: string, content: string, mimeType = "text/plain"): Promise<DriveFile> {
+    return this.uploadMultipart<DriveFile>(
+      "POST",
+      {
+        name,
+        parents: [parentId],
+        mimeType,
+      },
+      content,
+      mimeType,
+    );
+  }
+
+  async updateTextFile(fileId: string, name: string, content: string, mimeType = "text/plain"): Promise<DriveFile> {
+    return this.uploadMultipart<DriveFile>(
+      "PATCH",
+      {
+        name,
+        mimeType,
+      },
+      content,
+      mimeType,
       fileId,
     );
   }

@@ -123,6 +123,13 @@ type CatalogAssistResponse<TFilters> = {
   filters: TFilters;
 };
 
+type KnowledgePromotionResponse = {
+  status: "created" | "updated" | "unchanged";
+  fileId: string;
+  fileName: string;
+  webViewUrl: string;
+};
+
 const blankProject: ProjectForm = {
   customer_name: "",
   stone_id: "",
@@ -356,6 +363,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [valuationModal, setValuationModal] = useState<ValuationRecord | null>(null);
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationFollowUpLoading, setValuationFollowUpLoading] = useState(false);
+  const [valuationKnowledgeLoading, setValuationKnowledgeLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const deferredStoneSearch = useDeferredValue(stoneSearch.trim());
@@ -831,6 +839,34 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       pushToast(message, "error");
     } finally {
       setValuationFollowUpLoading(false);
+    }
+  }
+
+  async function promoteValuationKnowledge(valuation: ValuationRecord) {
+    setValuationKnowledgeLoading(true);
+    setValuationNotice("");
+
+    try {
+      const result = await postJson<KnowledgePromotionResponse>(
+        `/api/valuations/${encodeURIComponent(valuation.valuation_id)}/knowledge`,
+        {},
+      );
+
+      const message =
+        result.status === "created"
+          ? `Knowledge file ${result.fileName} created.`
+          : result.status === "updated"
+            ? `Knowledge file ${result.fileName} updated with the latest thread context.`
+            : `Knowledge file ${result.fileName} is already up to date.`;
+
+      setValuationNotice(message);
+      pushToast(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not promote this approximation into knowledge.";
+      setValuationNotice(message);
+      pushToast(message, "error");
+    } finally {
+      setValuationKnowledgeLoading(false);
     }
   }
 
@@ -1630,6 +1666,12 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                       >
                         {valuationFollowUpLoading ? "Refining..." : "Continue with Gemini"}
                       </button>
+                      <InlineButton
+                        disabled={valuationKnowledgeLoading || !valuationResult}
+                        onClick={() => valuationResult && promoteValuationKnowledge(valuationResult)}
+                      >
+                        {valuationKnowledgeLoading ? "Promoting..." : "Promote to knowledge"}
+                      </InlineButton>
                       <InlineButton onClick={() => loadValuationIntoForm(valuationResult)}>Load into approximation</InlineButton>
                       <InlineButton onClick={() => openValuationDetails(valuationResult)}>Open details</InlineButton>
                     </div>
@@ -1733,6 +1775,14 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               </div>
             ) : null}
             <div className="modal-actions">
+              <button
+                className="button"
+                type="button"
+                disabled={valuationKnowledgeLoading}
+                onClick={() => promoteValuationKnowledge(valuationModal)}
+              >
+                {valuationKnowledgeLoading ? "Promoting..." : "Promote to knowledge"}
+              </button>
               <button className="button" type="button" onClick={() => loadValuationIntoForm(valuationModal)}>
                 Load into approximation
               </button>
