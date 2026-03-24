@@ -36,8 +36,8 @@ export default async function HomePage() {
             <p className="eyebrow">Setup issue</p>
             <h1>Dashboard could not load.</h1>
             <p className="setup-lead">
-              The app is reachable, but the initial catalog snapshot failed. Use the details below to fix the Google
-              Sheets connection or Gemini setup, then refresh the page.
+              The app is reachable, but the initial dashboard snapshot failed. Use the details below to fix the Google
+              Sheets, Google Drive, or Gemini setup, then refresh the page.
             </p>
           </div>
 
@@ -46,10 +46,13 @@ export default async function HomePage() {
               <p className="eyebrow">Connection state</p>
               <ul className="setup-list">
                 <li>Sheets configured: {liveStatus.sheetsConfigured ? "Yes" : "No"}</li>
+                <li>Drive configured: {liveStatus.driveConfigured ? "Yes" : "No"}</li>
                 <li>Gemini configured: {liveStatus.geminiConfigured ? "Yes" : "No"}</li>
                 <li>Catalog access: {liveStatus.catalogReadOnly ? "Read-only Google Sheets" : "Local mock catalog"}</li>
                 <li>Activity storage: {liveStatus.activityStorage}</li>
                 <li>Spreadsheet ID: {liveStatus.spreadsheetId || "Not set"}</li>
+                <li>Drive parent folder: {liveStatus.driveFolderIds.parent || "Not set"}</li>
+                <li>Drive knowledge folder: {liveStatus.driveFolderIds.knowledge || "Not set"}</li>
               </ul>
             </article>
 

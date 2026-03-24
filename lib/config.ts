@@ -21,6 +21,14 @@ type Config = {
     spreadsheetId: string;
     serviceAccountEmail: string;
     privateKey: string;
+    drive: {
+      parentFolderId: string;
+      assistantFolderId: string;
+      knowledgeFolderId: string;
+      chatsFolderId: string;
+      customListingsFolderId: string;
+      approximationsFolderId: string;
+    };
     sheets: {
       stones: string;
       settings: string;
@@ -77,6 +85,14 @@ function createMissingEnv(
     missing.push("GOOGLE_PRIVATE_KEY");
   }
 
+  if (!hasText(google.drive.parentFolderId)) {
+    missing.push("GOOGLE_DRIVE_PARENT_FOLDER_ID");
+  }
+
+  if (!hasText(google.drive.knowledgeFolderId)) {
+    missing.push("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID");
+  }
+
   if (valuationProvider === "gemini" && !hasText(geminiApiKey)) {
     missing.push("GEMINI_API_KEY");
   }
@@ -91,6 +107,14 @@ function createConfig(): Config {
     spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID?.trim() ?? "",
     serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() ?? "",
     privateKey: normalizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
+    drive: {
+      parentFolderId: process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID?.trim() ?? "",
+      assistantFolderId: process.env.GOOGLE_DRIVE_ASSISTANT_FOLDER_ID?.trim() ?? "",
+      knowledgeFolderId: process.env.GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID?.trim() ?? "",
+      chatsFolderId: process.env.GOOGLE_DRIVE_CHATS_FOLDER_ID?.trim() ?? "",
+      customListingsFolderId: process.env.GOOGLE_DRIVE_CUSTOM_LISTINGS_FOLDER_ID?.trim() ?? "",
+      approximationsFolderId: process.env.GOOGLE_DRIVE_APPROXIMATIONS_FOLDER_ID?.trim() ?? "",
+    },
     sheets: {
       stones: process.env.GOOGLE_SHEET_STONES?.trim() || "Stones",
       settings: process.env.GOOGLE_SHEET_SETTINGS?.trim() || "Settings",
@@ -103,6 +127,11 @@ function createConfig(): Config {
 
   const sheetsReady =
     hasText(google.spreadsheetId) &&
+    hasText(google.serviceAccountEmail) &&
+    hasText(google.privateKey);
+  const driveReady =
+    hasText(google.drive.parentFolderId) &&
+    hasText(google.drive.knowledgeFolderId) &&
     hasText(google.serviceAccountEmail) &&
     hasText(google.privateKey);
   const geminiApiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
@@ -124,8 +153,13 @@ function createConfig(): Config {
       sheetsConfigured: sheetsReady,
       geminiConfigured: geminiReady,
       catalogReadOnly: resolvedDataMode === "sheets",
-      activityStorage: "local",
+      driveConfigured: driveReady,
+      activityStorage: driveReady ? "drive" : "local",
       spreadsheetId: google.spreadsheetId,
+      driveFolderIds: {
+        parent: google.drive.parentFolderId,
+        knowledge: google.drive.knowledgeFolderId,
+      },
       sheetNames: { ...google.sheets },
       missingEnv,
     },

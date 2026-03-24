@@ -10,6 +10,12 @@ export interface GroundingSource {
   uri: string;
 }
 
+export interface KnowledgeFileReference {
+  file_id: string;
+  name: string;
+  web_view_url: string;
+}
+
 export interface MetalPrices {
   gold: number;
   silver: number;
@@ -145,6 +151,7 @@ export interface ValuationEstimate {
   inferred_gold_weight_g: number;
   grounding_search_queries: string[];
   grounding_sources: GroundingSource[];
+  referenced_knowledge_files: KnowledgeFileReference[];
 }
 
 export interface ValuationMessage {
@@ -232,8 +239,13 @@ export interface DashboardSnapshot {
     sheetsConfigured: boolean;
     geminiConfigured: boolean;
     catalogReadOnly: boolean;
-    activityStorage: "local" | "sheets";
+    driveConfigured: boolean;
+    activityStorage: "local" | "drive";
     spreadsheetId: string;
+    driveFolderIds: {
+      parent: string;
+      knowledge: string;
+    };
     sheetNames: {
       stones: string;
       settings: string;

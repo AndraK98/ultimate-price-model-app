@@ -589,8 +589,8 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     const existing = projectStoneRefs.find((line) => line.stone.stone_id === stone.stone_id);
     const next = existing
       ? projectStoneRefs.map((line) =>
-          line.stone.stone_id === stone.stone_id ? { ...line, quantity: line.quantity + quantity } : line,
-        )
+        line.stone.stone_id === stone.stone_id ? { ...line, quantity: line.quantity + quantity } : line,
+      )
       : [...projectStoneRefs, { stone, quantity }];
 
     setProjectStoneRefs(next);
@@ -1436,7 +1436,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
             <div className="quote-grid">
               <QuoteItem label="Stone total" value={money(projectQuote.stoneCost)} />
               <QuoteItem label="14K setting price" value={money(projectQuote.basePrice)} />
-              <QuoteItem label="B2C total" value={money(projectQuote.catalogSubtotal)} />
+              <QuoteItem label="B2C Total Price (Setting + Stones)" value={money(projectQuote.catalogSubtotal)} />
               <QuoteItem label="Estimated quote 14K" value={money(projectQuote.estimatedQuote14k)} highlight />
               <QuoteItem label="Estimated quote 18K" value={money(projectQuote.estimatedQuote18k)} highlight />
             </div>
@@ -1450,7 +1450,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
           <div className="table-card">
             <div className="table-card__header"><h3>Listings</h3><span>{projects.length}</span></div>
             <table className="data-table">
-              <thead><tr><th>Listing</th><th>Status</th><th>B2C total</th><th>Quotes</th></tr></thead>
+              <thead><tr><th>Listing</th><th>Status</th><th>B2C Total Price (Setting + Stones)</th><th>Quotes</th></tr></thead>
               <tbody>
                 {projects.slice(0, 6).map((project) => (
                   <tr key={project.inquiry_id}>
@@ -1532,112 +1532,112 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               ) : null}
             </div>
             <div key={valuationLoading ? "thinking" : valuationResult?.valuation_id ?? "empty"} className="ai-response-frame">
-            {valuationLoading ? (
-              <>
-                <div className="detail-block">
-                  <h4>Request</h4>
-                  <p className="detail-note">{valuationForm.description}</p>
-                  {valuationForm.reference_image_url ? (
-                    <p className="detail-note">
-                      <a className="link-inline" href={valuationForm.reference_image_url} target="_blank" rel="noreferrer">
-                        {valuationForm.reference_image_url}
-                      </a>
-                    </p>
-                  ) : null}
-                  {(valuationForm.reference_image_url || valuationForm.image_data_url) ? (
-                    <div className="valuation-media-grid">
-                      <MediaPreview src={valuationForm.reference_image_url} alt="Reference image preview" />
-                      <MediaPreview src={valuationForm.image_data_url} alt="Uploaded image preview" />
-                    </div>
-                  ) : null}
-                </div>
-                <div className="thinking-panel">
-                  <div className="thinking-panel__status">
-                    <span>Loading response from Gemini</span>
-                    <div className="thinking-dots" aria-hidden="true">
-                      <span className="thinking-dot" />
-                      <span className="thinking-dot" />
-                      <span className="thinking-dot" />
-                    </div>
-                  </div>
-                  <p className="detail-note">Reading the brief, image context, and catalog references to assemble an estimate.</p>
-                  <div className="thinking-lines" aria-hidden="true">
-                    <span className="thinking-line thinking-line--long" />
-                    <span className="thinking-line thinking-line--mid" />
-                    <span className="thinking-line thinking-line--short" />
-                  </div>
-                </div>
-              </>
-            ) : valuationResult ? (
-              <>
-                <div className="detail-block">
-                  <h4>Request</h4>
-                  <p className="detail-note">{valuationResult.description}</p>
-                  {valuationResult.reference_image_url ? (
-                    <p className="detail-note">
-                      <a className="link-inline" href={valuationResult.reference_image_url} target="_blank" rel="noreferrer">
-                        {valuationResult.reference_image_url}
-                      </a>
-                    </p>
-                  ) : null}
-                  <div className="valuation-media-grid">
-                    <MediaPreview src={valuationResult.reference_image_url} alt="Reference image" />
-                    <MediaPreview src={valuationResult.image_data_url} alt="Uploaded image" />
-                  </div>
-                </div>
-                <div className="quote-grid">
-                  <QuoteItem label="Stone subtotal" value={money(valuationResult.estimated_stone_total)} />
-                  <QuoteItem label="Setting subtotal" value={money(valuationResult.estimated_setting_total)} />
-                  <QuoteItem label="Formula estimate" value={money(valuationResult.estimated_formula_total || midpoint(valuationResult.estimated_value_low, valuationResult.estimated_value_high))} highlight />
-                </div>
-                <div className="detail-block">
-                  <h4>Gemini response</h4>
-                  <p className="detail-note detail-note--strong">{valuationResult.pricing_summary}</p>
-                  <p className="detail-note">{valuationResult.reasoning}</p>
-                  <p className="detail-note">{valuationResult.recommended_next_step}</p>
-                </div>
-                {valuationFollowUpMessages.length ? (
+              {valuationLoading ? (
+                <>
                   <div className="detail-block">
-                    <h4>Refinements</h4>
-                    <div className="conversation-thread">
-                      {valuationFollowUpMessages.map((message) => (
-                        <article
-                          key={message.message_id}
-                          className={`conversation-message conversation-message--${message.role}`}
-                        >
-                          <span className="conversation-message__role">{message.role === "user" ? "You" : "Gemini"}</span>
-                          <p>{message.role === "assistant" ? buildAssistantMessagePreview(message) : message.content}</p>
-                        </article>
-                      ))}
+                    <h4>Request</h4>
+                    <p className="detail-note">{valuationForm.description}</p>
+                    {valuationForm.reference_image_url ? (
+                      <p className="detail-note">
+                        <a className="link-inline" href={valuationForm.reference_image_url} target="_blank" rel="noreferrer">
+                          {valuationForm.reference_image_url}
+                        </a>
+                      </p>
+                    ) : null}
+                    {(valuationForm.reference_image_url || valuationForm.image_data_url) ? (
+                      <div className="valuation-media-grid">
+                        <MediaPreview src={valuationForm.reference_image_url} alt="Reference image preview" />
+                        <MediaPreview src={valuationForm.image_data_url} alt="Uploaded image preview" />
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="thinking-panel">
+                    <div className="thinking-panel__status">
+                      <span>Loading response from Gemini</span>
+                      <div className="thinking-dots" aria-hidden="true">
+                        <span className="thinking-dot" />
+                        <span className="thinking-dot" />
+                        <span className="thinking-dot" />
+                      </div>
+                    </div>
+                    <p className="detail-note">Reading the brief, image context, and catalog references to assemble an estimate.</p>
+                    <div className="thinking-lines" aria-hidden="true">
+                      <span className="thinking-line thinking-line--long" />
+                      <span className="thinking-line thinking-line--mid" />
+                      <span className="thinking-line thinking-line--short" />
                     </div>
                   </div>
-                ) : null}
-                <form className="stack" onSubmit={handleValuationFollowUpSubmit}>
-                  <Field label="Continue this approximation">
-                    <textarea
-                      className="field-control field-control--textarea"
-                      rows={3}
-                      value={valuationFollowUp}
-                      onChange={(event) => setValuationFollowUp(event.target.value)}
-                      placeholder="Same ring, but all lab dia. Keep the setting and replace the side stones."
-                    />
-                  </Field>
-                  <div className="action-row action-row--compact">
-                    <button
-                      className="button"
-                      type="submit"
-                      disabled={valuationFollowUpLoading || !valuationResult}
-                    >
-                      {valuationFollowUpLoading ? "Refining..." : "Continue with Gemini"}
-                    </button>
-                    <InlineButton onClick={() => loadValuationIntoForm(valuationResult)}>Load into approximation</InlineButton>
-                    <InlineButton onClick={() => openValuationDetails(valuationResult)}>Open details</InlineButton>
+                </>
+              ) : valuationResult ? (
+                <>
+                  <div className="detail-block">
+                    <h4>Request</h4>
+                    <p className="detail-note">{valuationResult.description}</p>
+                    {valuationResult.reference_image_url ? (
+                      <p className="detail-note">
+                        <a className="link-inline" href={valuationResult.reference_image_url} target="_blank" rel="noreferrer">
+                          {valuationResult.reference_image_url}
+                        </a>
+                      </p>
+                    ) : null}
+                    <div className="valuation-media-grid">
+                      <MediaPreview src={valuationResult.reference_image_url} alt="Reference image" />
+                      <MediaPreview src={valuationResult.image_data_url} alt="Uploaded image" />
+                    </div>
                   </div>
-                </form>
-              </>
-            ) : (
-              <p className="empty-state">No approximation yet.</p>
-            )}
+                  <div className="quote-grid">
+                    <QuoteItem label="Stone subtotal" value={money(valuationResult.estimated_stone_total)} />
+                    <QuoteItem label="Setting subtotal" value={money(valuationResult.estimated_setting_total)} />
+                    <QuoteItem label="Formula estimate" value={money(valuationResult.estimated_formula_total || midpoint(valuationResult.estimated_value_low, valuationResult.estimated_value_high))} highlight />
+                  </div>
+                  <div className="detail-block">
+                    <h4>Gemini response</h4>
+                    <p className="detail-note detail-note--strong">{valuationResult.pricing_summary}</p>
+                    <p className="detail-note">{valuationResult.reasoning}</p>
+                    <p className="detail-note">{valuationResult.recommended_next_step}</p>
+                  </div>
+                  {valuationFollowUpMessages.length ? (
+                    <div className="detail-block">
+                      <h4>Refinements</h4>
+                      <div className="conversation-thread">
+                        {valuationFollowUpMessages.map((message) => (
+                          <article
+                            key={message.message_id}
+                            className={`conversation-message conversation-message--${message.role}`}
+                          >
+                            <span className="conversation-message__role">{message.role === "user" ? "You" : "Gemini"}</span>
+                            <p>{message.role === "assistant" ? buildAssistantMessagePreview(message) : message.content}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <form className="stack" onSubmit={handleValuationFollowUpSubmit}>
+                    <Field label="Continue this approximation">
+                      <textarea
+                        className="field-control field-control--textarea"
+                        rows={3}
+                        value={valuationFollowUp}
+                        onChange={(event) => setValuationFollowUp(event.target.value)}
+                        placeholder="Same ring, but all lab dia. Keep the setting and replace the side stones."
+                      />
+                    </Field>
+                    <div className="action-row action-row--compact">
+                      <button
+                        className="button"
+                        type="submit"
+                        disabled={valuationFollowUpLoading || !valuationResult}
+                      >
+                        {valuationFollowUpLoading ? "Refining..." : "Continue with Gemini"}
+                      </button>
+                      <InlineButton onClick={() => loadValuationIntoForm(valuationResult)}>Load into approximation</InlineButton>
+                      <InlineButton onClick={() => openValuationDetails(valuationResult)}>Open details</InlineButton>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <p className="empty-state">No approximation yet.</p>
+              )}
             </div>
           </div>
           <div className="table-card">

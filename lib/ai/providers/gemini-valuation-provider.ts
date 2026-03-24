@@ -1,5 +1,6 @@
 import { extractGrounding, runWithGeminiModelFallback } from "@/lib/ai/google-genai";
 import { type ValuationCatalogContext, type ValuationProvider } from "@/lib/ai/types";
+import { buildKnowledgePromptSection, selectRelevantKnowledgeFiles } from "@/lib/drive/knowledge-service";
 import { getComplexityMultiplier } from "@/lib/services/quote-service";
 import { type Setting, type Stone, type ValuationEstimate, type ValuationMessage, type ValuationRequestInput } from "@/lib/types";
 import { valuationEstimateSchema } from "@/lib/validators";
@@ -471,6 +472,7 @@ function normalizeValuationEstimatePayload(payload: unknown): unknown {
           })
           .filter((value): value is { title: string; uri: string } => value !== null)
       : [],
+    referenced_knowledge_files: [],
   };
 }
 
@@ -515,6 +517,10 @@ export class GeminiValuationProvider implements ValuationProvider {
   ): Promise<ValuationEstimate> {
     const metalRates = context.defaults.metalPrices;
     const descriptionHasStone = hasStoneIntent(input.description);
+    const knowledgeSnippets = await selectRelevantKnowledgeFiles({
+      description: input.description,
+      history: options?.history,
+    });
 
     const stoneCatalogExcerpt = (descriptionHasStone
       ? takeMatchingOrFallback(
@@ -583,6 +589,7 @@ export class GeminiValuationProvider implements ValuationProvider {
       "pricing_summary must be a concise numeric pricing trace, not hidden chain-of-thought. Keep it to 3-5 short sentences with the main amounts and basis used, including stone subtotal, setting subtotal, complexity, multiplier, and formula total.",
       "reasoning must stay short.",
       "recommended_next_step must stay short.",
+      "Internal Drive knowledge excerpts are trusted company context. Use them when they materially clarify the design, terminology, pricing conventions, or workflow expectations in the request.",
       "grounding_search_queries should list the main web-search queries you actually used, if any.",
       "grounding_sources should be an array of objects with title and uri for the key web sources you relied on. If grounding was not needed, return an empty array.",
       pricingMethod,
@@ -593,6 +600,7 @@ export class GeminiValuationProvider implements ValuationProvider {
         ? "A reference URL was provided. Use it as supplemental context if it helps identify the piece or comparable listing."
         : "No reference URL was provided.",
       `Conversation so far:\n${buildConversationTranscript(options?.history ?? [])}`,
+      `Relevant internal knowledge:\n${buildKnowledgePromptSection(knowledgeSnippets)}`,
       "Infer the actual jewelry characteristics from the full description and catalog context.",
       "The description may be long and detailed. Use the entire description holistically, including metal references, weights, setting construction, stone arrangement, dimensions, finish, inspiration, style cues, era references, and any pricing clues implied by the brief.",
       `Provided metal rates per gram: ${JSON.stringify(metalRates)}`,
@@ -671,6 +679,7 @@ export class GeminiValuationProvider implements ValuationProvider {
       grounding_search_queries:
         repaired.grounding_search_queries.length > 0 ? repaired.grounding_search_queries : grounding.searchQueries,
       grounding_sources: repaired.grounding_sources.length > 0 ? repaired.grounding_sources : grounding.sources,
+      referenced_knowledge_files: knowledgeSnippets.map((snippet) => snippet.reference),
     };
   }
 }

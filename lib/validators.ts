@@ -34,6 +34,11 @@ const groundingSourceSchema = z.object({
   title: z.string().trim().min(1),
   uri: z.string().trim().url(),
 });
+const knowledgeFileReferenceSchema = z.object({
+  file_id: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  web_view_url: z.string().trim().url(),
+});
 
 export const stoneInputSchema = z.object({
   stone_id: z.string().trim().min(1).optional(),
@@ -125,6 +130,7 @@ export const valuationEstimateSchema = z.object({
   inferred_gold_weight_g: valuationNumericField.default(0),
   grounding_search_queries: z.array(z.string().trim().min(1)).default([]),
   grounding_sources: z.array(groundingSourceSchema).default([]),
+  referenced_knowledge_files: z.array(knowledgeFileReferenceSchema).default([]),
 });
 
 export const valuationMessageSchema = z.object({

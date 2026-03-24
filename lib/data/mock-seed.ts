@@ -262,6 +262,7 @@ export const mockSeed: MockDatabase = {
       inferred_gold_weight_g: 2.8,
       grounding_search_queries: [],
       grounding_sources: [],
+      referenced_knowledge_files: [],
       provider: "gemini",
       created_by: "atelier-team",
       created_at: "2026-03-15T13:00:00.000Z",

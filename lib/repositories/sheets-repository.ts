@@ -614,6 +614,7 @@ export class SheetsRepository implements AppRepository {
         ),
         grounding_search_queries: [],
         grounding_sources: [],
+        referenced_knowledge_files: [],
         provider: "gemini",
         created_by: cell(row, canonical.headerMap, "created_by") || "sheet-import",
         created_at: cell(row, canonical.headerMap, "created_at") || "",

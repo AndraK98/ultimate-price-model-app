@@ -1,4 +1,5 @@
 import { getAppConfig } from "@/lib/config";
+import { mutateActivityDatabase, readActivityDatabase } from "@/lib/data/activity-store";
 import { mutateMockDatabase, readMockDatabase } from "@/lib/data/mock-store";
 import { matchesSettingFilters, matchesStoneFilters } from "@/lib/catalog-search";
 import { type AppRepository } from "@/lib/repositories/contracts";
@@ -189,36 +190,36 @@ export class MockRepository implements AppRepository {
   }
 
   async listInquiries(): Promise<Inquiry[]> {
-    const database = await readMockDatabase();
+    const database = await readActivityDatabase();
     return database.inquiries.sort((left, right) => right.created_at.localeCompare(left.created_at));
   }
 
   async createInquiry(inquiry: Inquiry): Promise<Inquiry> {
-    return mutateMockDatabase(async (database) => {
+    return mutateActivityDatabase(async (database) => {
       database.inquiries.unshift(inquiry);
       return inquiry;
     });
   }
 
   async listValuations(): Promise<ValuationRecord[]> {
-    const database = await readMockDatabase();
+    const database = await readActivityDatabase();
     return database.valuations.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
   }
 
   async findValuationById(valuationId: string): Promise<ValuationRecord | null> {
-    const database = await readMockDatabase();
+    const database = await readActivityDatabase();
     return database.valuations.find((valuation) => valuation.valuation_id === valuationId) ?? null;
   }
 
   async createValuation(valuation: ValuationRecord): Promise<ValuationRecord> {
-    return mutateMockDatabase(async (database) => {
+    return mutateActivityDatabase(async (database) => {
       database.valuations.unshift(valuation);
       return valuation;
     });
   }
 
   async updateValuation(valuation: ValuationRecord): Promise<ValuationRecord> {
-    return mutateMockDatabase(async (database) => {
+    return mutateActivityDatabase(async (database) => {
       const index = database.valuations.findIndex((entry) => entry.valuation_id === valuation.valuation_id);
 
       if (index === -1) {

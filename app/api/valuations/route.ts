@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
       inferred_gold_weight_g: estimate.inferred_gold_weight_g,
       grounding_search_queries: estimate.grounding_search_queries ?? [],
       grounding_sources: estimate.grounding_sources ?? [],
+      referenced_knowledge_files: estimate.referenced_knowledge_files ?? [],
       provider,
       created_by: input.created_by,
       created_at: createdAt,
