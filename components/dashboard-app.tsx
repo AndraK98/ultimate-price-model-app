@@ -25,6 +25,7 @@ import {
   type ValuationMessage,
   type ValuationRecord,
 } from "@/lib/types";
+import { APP_DISPLAY_TITLE } from "@/lib/app-version";
 import { formatStoneSize } from "@/lib/utils";
 
 type ProjectForm = {
@@ -1708,6 +1709,9 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
 
   return (
     <main className="dashboard-shell">
+      <header className="dashboard-app-header">
+        <h1 className="dashboard-app-title">{APP_DISPLAY_TITLE}</h1>
+      </header>
       {toasts.length ? (
         <div className="toast-stack" aria-live="polite" aria-atomic="true">
           {toasts.map((toast) => (
