@@ -17,6 +17,7 @@ import { calculateQuoteBreakdown } from "@/lib/services/quote-service";
 import {
   type DashboardSnapshot,
   type Inquiry,
+  type ListingDraftRecord,
   type ListingDraftResult,
   type PaginatedResult,
   type ProductComposition,
@@ -48,6 +49,10 @@ type ValuationForm = {
 
 type ListingDraftForm = {
   source_url: string;
+  stone_clues: string;
+  metal_hint: string;
+  internal_notes: string;
+  weight_basis_preference: "auto" | "women_7" | "men_10";
   created_by: string;
 };
 
@@ -156,6 +161,10 @@ const blankValuation: ValuationForm = {
 
 const blankListingDraft: ListingDraftForm = {
   source_url: "",
+  stone_clues: "",
+  metal_hint: "",
+  internal_notes: "",
+  weight_basis_preference: "auto",
   created_by: "atelier-team",
 };
 
@@ -266,6 +275,10 @@ function buildAssistantMessagePreview(message: ValuationMessage) {
   return message.pricing_summary || message.content;
 }
 
+function buildListingDraftAssistantPreview(message: ValuationMessage) {
+  return message.content;
+}
+
 function sanitizeTsvCell(value: string | number) {
   return String(value).replace(/[\t\r\n]+/g, " ").trim();
 }
@@ -275,26 +288,34 @@ function buildListingDraftPreview(draft: ListingDraftResult) {
     "ID",
     "Handle",
     "Title",
+    "Metal",
     "Weight basis",
     "Estimated gold weight (g)",
+    "Main stone SKU",
     "Main stone",
     "Main stone qty",
+    "Side stone SKU",
     "Side stone",
     "Side stone qty",
     "Setting SKU",
+    "Stone matching notes",
   ];
 
   const values = [
     draft.product_id || "",
     draft.product_handle || "",
     draft.title || "",
+    draft.metal || "",
     draft.weight_reference_size,
     draft.estimated_gold_weight_g,
+    draft.main_stone_sku || "",
     draft.main_stone || "",
     draft.main_stone_quantity || 0,
+    draft.side_stone_sku || "",
     draft.side_stone || "",
     draft.side_stone_quantity || 0,
     draft.setting_sku || "",
+    draft.stone_matching_notes || "",
   ];
 
   return [
@@ -372,6 +393,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [settings, setSettings] = useState(initialSnapshot.settings);
   const [projects, setProjects] = useState(initialSnapshot.inquiries);
   const [valuations, setValuations] = useState(initialSnapshot.valuations);
+  const [listingDrafts, setListingDrafts] = useState(initialSnapshot.listingDrafts);
   const [projectForm, setProjectForm] = useState<ProjectForm>(blankProject);
   const [valuationForm, setValuationForm] = useState(blankValuation);
   const [listingDraftForm, setListingDraftForm] = useState<ListingDraftForm>(blankListingDraft);
@@ -401,6 +423,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [valuationNotice, setValuationNotice] = useState("");
   const [listingDraftNotice, setListingDraftNotice] = useState("");
   const [valuationFollowUp, setValuationFollowUp] = useState("");
+  const [listingDraftFollowUp, setListingDraftFollowUp] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [stoneError, setStoneError] = useState("");
   const [settingError, setSettingError] = useState("");
@@ -411,13 +434,14 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [stoneAssistNotice, setStoneAssistNotice] = useState("");
   const [settingAssistNotice, setSettingAssistNotice] = useState("");
   const [valuationResult, setValuationResult] = useState<ValuationRecord | null>(initialSnapshot.valuations[0] ?? null);
-  const [listingDraftResult, setListingDraftResult] = useState<ListingDraftResult | null>(null);
+  const [listingDraftResult, setListingDraftResult] = useState<ListingDraftRecord | null>(initialSnapshot.listingDrafts[0] ?? null);
   const [valuationModal, setValuationModal] = useState<ValuationRecord | null>(null);
-  const [listingDraftModal, setListingDraftModal] = useState<ListingDraftResult | null>(null);
+  const [listingDraftModal, setListingDraftModal] = useState<ListingDraftRecord | null>(null);
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationFollowUpLoading, setValuationFollowUpLoading] = useState(false);
   const [valuationKnowledgeLoading, setValuationKnowledgeLoading] = useState(false);
   const [listingDraftLoading, setListingDraftLoading] = useState(false);
+  const [listingDraftFollowUpLoading, setListingDraftFollowUpLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const deferredStoneSearch = useDeferredValue(stoneSearch.trim());
@@ -639,6 +663,8 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     null;
   const valuationThread = valuationResult?.messages ?? [];
   const valuationFollowUpMessages = valuationThread.slice(2);
+  const listingDraftThread = listingDraftResult?.messages ?? [];
+  const listingDraftFollowUpMessages = listingDraftThread.slice(2);
 
   function attachStoneToProject(stone: Stone) {
     const quantity = parsePositiveQuantity(selectedStoneQuantity);
@@ -708,6 +734,22 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     setValuationModal((current) => (current?.valuation_id === next.valuation_id ? next : current));
   }
 
+  function upsertListingDraftRecord(next: ListingDraftRecord) {
+    setListingDrafts((current) => {
+      const existingIndex = current.findIndex((draft) => draft.listing_draft_id === next.listing_draft_id);
+
+      if (existingIndex === -1) {
+        return [next, ...current];
+      }
+
+      const updated = [...current];
+      updated[existingIndex] = next;
+      return updated.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+    });
+    setListingDraftResult(next);
+    setListingDraftModal((current) => (current?.listing_draft_id === next.listing_draft_id ? next : current));
+  }
+
   function applyRecalledVariant(composition: ProductComposition, variantKey: string) {
     const variant =
       composition.variants.find((candidate) => candidate.variant_key === variantKey) ??
@@ -767,6 +809,22 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     pushToast(`Approximation ${valuation.valuation_id} loaded into the form.`);
   }
 
+  function loadListingDraftIntoForm(draft: ListingDraftRecord) {
+    setListingDraftForm({
+      source_url: draft.source_url,
+      stone_clues: draft.stone_clues,
+      metal_hint: draft.metal_hint,
+      internal_notes: draft.internal_notes,
+      weight_basis_preference: draft.weight_basis_preference,
+      created_by: draft.created_by,
+    });
+    setListingDraftResult(draft);
+    setListingDraftModal(null);
+    setListingDraftFollowUp("");
+    setListingDraftNotice(`Loaded draft ${draft.listing_draft_id} back into the form.`);
+    pushToast(`Draft ${draft.listing_draft_id} loaded into the form.`);
+  }
+
   async function handleValuationImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -788,6 +846,11 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   function openValuationDetails(valuation: ValuationRecord) {
     setValuationResult(valuation);
     setValuationModal(valuation);
+  }
+
+  function openListingDraftDetails(draft: ListingDraftRecord) {
+    setListingDraftResult(draft);
+    setListingDraftModal(draft);
   }
 
   async function runRecall() {
@@ -902,11 +965,18 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     setListingDraftNotice("");
 
     try {
-      const result = await postJson<ListingDraftResult>("/api/listing-drafts", {
+      const result = await postJson<ListingDraftRecord>("/api/listing-drafts", {
         source_url: listingDraftForm.source_url,
+        stone_clues: listingDraftForm.stone_clues,
+        metal_hint: listingDraftForm.metal_hint,
+        internal_notes: listingDraftForm.internal_notes,
+        weight_basis_preference: listingDraftForm.weight_basis_preference,
         created_by: listingDraftForm.created_by,
       });
-      setListingDraftResult(result);
+      startTransition(() => {
+        upsertListingDraftRecord(result);
+      });
+      setListingDraftFollowUp("");
       setListingDraftNotice(`Drafted ${result.product_handle || result.product_id || "listing"} for the 3D team.`);
       pushToast(`Drafted ${result.setting_sku} for ${result.product_handle || result.product_id || "listing"}.`);
     } catch (error) {
@@ -915,6 +985,42 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       pushToast(message, "error");
     } finally {
       setListingDraftLoading(false);
+    }
+  }
+
+  async function handleListingDraftFollowUpSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!listingDraftResult) {
+      pushToast("Run or select a draft first.", "error");
+      return;
+    }
+
+    if (!listingDraftFollowUp.trim()) {
+      pushToast("Type a refinement for Gemini first.", "error");
+      return;
+    }
+
+    setListingDraftFollowUpLoading(true);
+    setListingDraftNotice("");
+
+    try {
+      const updated = await postJson<ListingDraftRecord>(
+        `/api/listing-drafts/${encodeURIComponent(listingDraftResult.listing_draft_id)}/messages`,
+        { message: listingDraftFollowUp.trim() },
+      );
+      startTransition(() => {
+        upsertListingDraftRecord(updated);
+      });
+      setListingDraftFollowUp("");
+      setListingDraftNotice(`Gemini refined draft ${updated.listing_draft_id}.`);
+      pushToast(`Gemini updated ${updated.listing_draft_id}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not refine the missing listing draft.";
+      setListingDraftNotice(message);
+      pushToast(message, "error");
+    } finally {
+      setListingDraftFollowUpLoading(false);
     }
   }
 
@@ -1804,6 +1910,49 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               placeholder="https://www.capucinne.com/products/..."
             />
           </Field>
+          <div className="form-grid">
+            <Field label="Stone clues">
+              <input
+                className="field-control"
+                value={listingDraftForm.stone_clues}
+                onChange={(event) => setListingDraftForm((current) => ({ ...current, stone_clues: event.target.value }))}
+                placeholder="Oval sapphire center, round side stones, 2 mm..."
+              />
+            </Field>
+            <Field label="Metal clue">
+              <input
+                className="field-control"
+                value={listingDraftForm.metal_hint}
+                onChange={(event) => setListingDraftForm((current) => ({ ...current, metal_hint: event.target.value }))}
+                placeholder="14k yellow gold, silver..."
+              />
+            </Field>
+            <Field label="Weight basis">
+              <select
+                className="field-control"
+                value={listingDraftForm.weight_basis_preference}
+                onChange={(event) =>
+                  setListingDraftForm((current) => ({
+                    ...current,
+                    weight_basis_preference: event.target.value as ListingDraftForm["weight_basis_preference"],
+                  }))
+                }
+              >
+                <option value="auto">Auto</option>
+                <option value="women_7">US size 7 women</option>
+                <option value="men_10">US size 10 men</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Internal notes to Gemini">
+            <textarea
+              className="field-control field-control--textarea"
+              rows={3}
+              value={listingDraftForm.internal_notes}
+              onChange={(event) => setListingDraftForm((current) => ({ ...current, internal_notes: event.target.value }))}
+              placeholder="Anything the team already knows that is not obvious from the Shopify page."
+            />
+          </Field>
           <div className="action-row">
             <button className="button" disabled={listingDraftLoading} type="submit">
               {listingDraftLoading ? "Scanning Shopify..." : "Draft missing listing"}
@@ -1818,7 +1967,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               <div>
                 <h3>Latest draft</h3>
               </div>
-              {listingDraftLoading ? (
+              {listingDraftLoading || listingDraftFollowUpLoading ? (
                 <StatusPill tone="rose">thinking</StatusPill>
               ) : listingDraftResult ? (
                 <StatusPill>{listingDraftResult.provider}</StatusPill>
@@ -1854,14 +2003,15 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                 </div>
                 <div className="quote-grid">
                   <QuoteItem label="Setting SKU" value={listingDraftResult.setting_sku || "Not set"} highlight />
-                  <QuoteItem label="Main stone qty" value={String(listingDraftResult.main_stone_quantity || 0)} />
-                  <QuoteItem label="Side stone qty" value={String(listingDraftResult.side_stone_quantity || 0)} />
+                  <QuoteItem label="Main stone SKU" value={listingDraftResult.main_stone_sku || "Not set"} />
+                  <QuoteItem label="Side stone SKU" value={listingDraftResult.side_stone_sku || "Not set"} />
                 </div>
                 <dl className="detail-grid detail-grid--compact">
                   <DetailItem label="ID" value={listingDraftResult.product_id || "Not found"} />
                   <DetailItem label="Handle" value={listingDraftResult.product_handle || "Not found"} />
-                  <DetailItem label="Main stone" value={listingDraftResult.main_stone || "None"} />
-                  <DetailItem label="Side stone" value={listingDraftResult.side_stone || "None"} />
+                  <DetailItem label="Main stone" value={`${listingDraftResult.main_stone || "None"} x${listingDraftResult.main_stone_quantity || 0}`} />
+                  <DetailItem label="Side stone" value={`${listingDraftResult.side_stone || "None"} x${listingDraftResult.side_stone_quantity || 0}`} />
+                  <DetailItem label="Metal" value={listingDraftResult.metal || "Not found"} />
                   <DetailItem label="Weight basis" value={listingDraftResult.weight_reference_size} />
                   <DetailItem label="Estimated gold weight" value={`${listingDraftResult.estimated_gold_weight_g} g`} />
                 </dl>
@@ -1869,9 +2019,55 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                   <h4>Master Popisi draft</h4>
                   <p className="detail-note">Draft only. Nothing is written back to Google Sheets.</p>
                   <pre className="draft-row-preview"><code>{buildListingDraftPreview(listingDraftResult)}</code></pre>
+                  <p className="detail-note">{listingDraftResult.stone_matching_notes}</p>
                   <p className="detail-note">{listingDraftResult.reasoning}</p>
                   <p className="detail-note">{listingDraftResult.recommended_next_step}</p>
                 </div>
+                {listingDraftFollowUpMessages.length ? (
+                  <div className="detail-block">
+                    <h4>Refinements</h4>
+                    <div className="conversation-thread">
+                      {listingDraftFollowUpMessages.map((message) => (
+                        <article
+                          key={message.message_id}
+                          className={`conversation-message conversation-message--${message.role}`}
+                        >
+                          <span className="conversation-message__role">{message.role === "user" ? "You" : "Gemini"}</span>
+                          <p>{message.role === "assistant" ? buildListingDraftAssistantPreview(message) : message.content}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {listingDraftResult.main_stone_candidates.length || listingDraftResult.side_stone_candidates.length ? (
+                  <div className="detail-block">
+                    <h4>Stone SKU candidates</h4>
+                    {listingDraftResult.main_stone_candidates.length ? (
+                      <div className="candidate-list">
+                        <p className="detail-note detail-note--strong">Main stone options</p>
+                        {listingDraftResult.main_stone_candidates.map((candidate) => (
+                          <article key={`main-${candidate.stone_id}`} className="candidate-card">
+                            <strong>{candidate.stone_id}</strong>
+                            <span>{[candidate.name, candidate.shape, candidate.size, candidate.carat ? `${candidate.carat} ct` : "", candidate.color].filter(Boolean).join(" | ")}</span>
+                            <span>{candidate.reason}</span>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                    {listingDraftResult.side_stone_candidates.length ? (
+                      <div className="candidate-list">
+                        <p className="detail-note detail-note--strong">Side stone options</p>
+                        {listingDraftResult.side_stone_candidates.map((candidate) => (
+                          <article key={`side-${candidate.stone_id}`} className="candidate-card">
+                            <strong>{candidate.stone_id}</strong>
+                            <span>{[candidate.name, candidate.shape, candidate.size, candidate.carat ? `${candidate.carat} ct` : "", candidate.color].filter(Boolean).join(" | ")}</span>
+                            <span>{candidate.reason}</span>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {listingDraftResult.image_urls.length ? (
                   <div className="valuation-media-grid">
                     {listingDraftResult.image_urls.slice(0, 4).map((imageUrl) => (
@@ -1879,14 +2075,51 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                     ))}
                   </div>
                 ) : null}
-                <div className="action-row action-row--compact">
-                  <InlineButton onClick={() => void copyListingDraftBlock(listingDraftResult)}>Copy draft row</InlineButton>
-                  <InlineButton onClick={() => setListingDraftModal(listingDraftResult)}>Open details</InlineButton>
-                </div>
+                <form className="stack" onSubmit={handleListingDraftFollowUpSubmit}>
+                  <Field label="Continue this draft">
+                    <textarea
+                      className="field-control field-control--textarea"
+                      rows={3}
+                      value={listingDraftFollowUp}
+                      onChange={(event) => setListingDraftFollowUp(event.target.value)}
+                      placeholder="Same setting, but the side stones should be pear and not round."
+                    />
+                  </Field>
+                  <div className="action-row action-row--compact">
+                    <button className="button" type="submit" disabled={listingDraftFollowUpLoading || !listingDraftResult}>
+                      {listingDraftFollowUpLoading ? "Refining..." : "Continue with Gemini"}
+                    </button>
+                    <InlineButton onClick={() => void copyListingDraftBlock(listingDraftResult)}>Copy draft row</InlineButton>
+                    <InlineButton onClick={() => loadListingDraftIntoForm(listingDraftResult)}>Load into draft</InlineButton>
+                    <InlineButton onClick={() => openListingDraftDetails(listingDraftResult)}>Open details</InlineButton>
+                  </div>
+                </form>
               </>
             ) : (
               <p className="empty-state">No listing draft yet.</p>
             )}
+          </div>
+          <div className="table-card">
+            <div className="table-card__header"><h3>Draft log</h3><span>{listingDrafts.length}</span></div>
+            <table className="data-table">
+              <thead><tr><th>Listing</th><th>Stones</th><th>Setting</th><th>Updated</th></tr></thead>
+              <tbody>
+                {listingDrafts.slice(0, 6).map((draft) => (
+                  <tr key={draft.listing_draft_id} onClick={() => openListingDraftDetails(draft)}>
+                    <td>
+                      <strong>{excerpt(draft.title || draft.product_handle || draft.product_id)}</strong>
+                      <span>{draft.listing_draft_id}</span>
+                    </td>
+                    <td>
+                      <strong>{draft.main_stone_sku || draft.main_stone || "No main stone"}</strong>
+                      <span>{draft.side_stone_sku || draft.side_stone || "No side stone"}</span>
+                    </td>
+                    <td>{draft.setting_sku || "No setting SKU"}</td>
+                    <td>{stamp(draft.updated_at || draft.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -2011,14 +2244,60 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
               <DetailItem label="Metal" value={listingDraftModal.metal || "Not set"} />
               <DetailItem label="Weight basis" value={listingDraftModal.weight_reference_size} />
               <DetailItem label="Estimated gold weight" value={`${listingDraftModal.estimated_gold_weight_g} g`} />
-              <DetailItem label="Main stone" value={`${listingDraftModal.main_stone || "None"} x${listingDraftModal.main_stone_quantity || 0}`} />
-              <DetailItem label="Side stone" value={`${listingDraftModal.side_stone || "None"} x${listingDraftModal.side_stone_quantity || 0}`} />
+              <DetailItem label="Main stone" value={`${listingDraftModal.main_stone_sku || "No SKU"} | ${listingDraftModal.main_stone || "None"} x${listingDraftModal.main_stone_quantity || 0}`} />
+              <DetailItem label="Side stone" value={`${listingDraftModal.side_stone_sku || "No SKU"} | ${listingDraftModal.side_stone || "None"} x${listingDraftModal.side_stone_quantity || 0}`} />
             </dl>
             <div className="detail-block">
               <h4>Master Popisi draft</h4>
               <p className="detail-note">Draft only. Nothing is written back to Google Sheets.</p>
               <pre className="draft-row-preview"><code>{buildListingDraftPreview(listingDraftModal)}</code></pre>
             </div>
+            {listingDraftModal.messages.length > 2 ? (
+              <div className="detail-block">
+                <h4>Refinements</h4>
+                <div className="conversation-thread">
+                  {listingDraftModal.messages.slice(2).map((message) => (
+                    <article
+                      key={message.message_id}
+                      className={`conversation-message conversation-message--${message.role}`}
+                    >
+                      <span className="conversation-message__role">{message.role === "user" ? "You" : "Gemini"}</span>
+                      <p>{message.role === "assistant" ? buildListingDraftAssistantPreview(message) : message.content}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {(listingDraftModal.main_stone_candidates.length || listingDraftModal.side_stone_candidates.length) ? (
+              <div className="detail-block">
+                <h4>Stone SKU candidates</h4>
+                <p className="detail-note">{listingDraftModal.stone_matching_notes}</p>
+                {listingDraftModal.main_stone_candidates.length ? (
+                  <div className="candidate-list">
+                    <p className="detail-note detail-note--strong">Main stone options</p>
+                    {listingDraftModal.main_stone_candidates.map((candidate) => (
+                      <article key={`modal-main-${candidate.stone_id}`} className="candidate-card">
+                        <strong>{candidate.stone_id}</strong>
+                        <span>{[candidate.name, candidate.shape, candidate.size, candidate.carat ? `${candidate.carat} ct` : "", candidate.color].filter(Boolean).join(" | ")}</span>
+                        <span>{candidate.reason}</span>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+                {listingDraftModal.side_stone_candidates.length ? (
+                  <div className="candidate-list">
+                    <p className="detail-note detail-note--strong">Side stone options</p>
+                    {listingDraftModal.side_stone_candidates.map((candidate) => (
+                      <article key={`modal-side-${candidate.stone_id}`} className="candidate-card">
+                        <strong>{candidate.stone_id}</strong>
+                        <span>{[candidate.name, candidate.shape, candidate.size, candidate.carat ? `${candidate.carat} ct` : "", candidate.color].filter(Boolean).join(" | ")}</span>
+                        <span>{candidate.reason}</span>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="detail-block">
               <h4>Gemini response</h4>
               <p className="detail-note detail-note--strong">{listingDraftModal.reasoning}</p>
@@ -2034,6 +2313,9 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
             <div className="modal-actions">
               <button className="button" type="button" onClick={() => void copyListingDraftBlock(listingDraftModal)}>
                 Copy draft row
+              </button>
+              <button className="button" type="button" onClick={() => loadListingDraftIntoForm(listingDraftModal)}>
+                Load into draft
               </button>
               <InlineButton onClick={() => setListingDraftModal(null)}>Close</InlineButton>
             </div>

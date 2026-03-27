@@ -28,6 +28,7 @@ type Config = {
       chatsFolderId: string;
       customListingsFolderId: string;
       approximationsFolderId: string;
+      missingListingDraftsFolderId: string;
     };
     sheets: {
       stones: string;
@@ -114,6 +115,8 @@ function createConfig(): Config {
       chatsFolderId: process.env.GOOGLE_DRIVE_CHATS_FOLDER_ID?.trim() ?? "",
       customListingsFolderId: process.env.GOOGLE_DRIVE_CUSTOM_LISTINGS_FOLDER_ID?.trim() ?? "",
       approximationsFolderId: process.env.GOOGLE_DRIVE_APPROXIMATIONS_FOLDER_ID?.trim() ?? "",
+      missingListingDraftsFolderId:
+        process.env.GOOGLE_DRIVE_MISSING_LISTING_DRAFTS_FOLDER_ID?.trim() ?? "1zkMq8WAtOz93m5F8HflyVakcGyiEWn_H",
     },
     sheets: {
       stones: process.env.GOOGLE_SHEET_STONES?.trim() || "Stones",

@@ -55,6 +55,7 @@ export interface CatalogSearchAssistProvider {
 }
 
 export interface ListingDraftCatalogContext {
+  stones: Stone[];
   settings: Setting[];
 }
 
@@ -72,5 +73,9 @@ export interface ListingDraftProvider {
       imageDataUrls: string[];
     },
     context: ListingDraftCatalogContext,
+    options?: {
+      history?: ValuationMessage[];
+      currentDraft?: ListingDraftResult;
+    },
   ): Promise<ListingDraftResult>;
 }

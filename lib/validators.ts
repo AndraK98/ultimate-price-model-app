@@ -96,7 +96,23 @@ export const valuationRequestSchema = z.object({
 
 export const listingDraftRequestSchema = z.object({
   source_url: z.string().trim().url(),
+  stone_clues: textField,
+  metal_hint: textField,
+  internal_notes: textField,
+  weight_basis_preference: z.enum(["auto", "women_7", "men_10"]).default("auto"),
   created_by: z.string().trim().default("atelier-team"),
+});
+
+const listingDraftStoneCandidateSchema = z.object({
+  stone_id: z.string().trim().min(1),
+  name: textField,
+  shape: textField,
+  color: textField,
+  quality: textField,
+  size: textField,
+  carat: valuationNumericField.default(0),
+  final_price: valuationNumericField.default(0),
+  reason: z.string().trim().min(1),
 });
 
 export const valuationResolvedDetailsSchema = z.object({
@@ -148,8 +164,10 @@ export const listingDraftResultSchema = z.object({
   estimated_gold_weight_g: valuationNumericField.default(0),
   main_stone: textField,
   main_stone_quantity: valuationNumericField.default(0),
+  main_stone_sku: textField,
   side_stone: textField,
   side_stone_quantity: valuationNumericField.default(0),
+  side_stone_sku: textField,
   setting_sku: textField,
   setting_sku_source: z.enum(["catalog", "generated"]).default("generated"),
   matched_catalog_setting_id: textField,
@@ -157,6 +175,9 @@ export const listingDraftResultSchema = z.object({
   metal: textField,
   page_description: textField,
   image_urls: z.array(z.string().trim().url()).default([]),
+  stone_matching_notes: z.string().trim().min(1).default(""),
+  main_stone_candidates: z.array(listingDraftStoneCandidateSchema).default([]),
+  side_stone_candidates: z.array(listingDraftStoneCandidateSchema).default([]),
   reasoning: z.string().trim().min(1),
   recommended_next_step: z.string().trim().min(1),
   grounding_search_queries: z.array(z.string().trim().min(1)).default([]),
@@ -174,6 +195,13 @@ export const valuationMessageSchema = z.object({
   pricing_summary: z.string().trim().optional(),
   reasoning: z.string().trim().optional(),
   recommended_next_step: z.string().trim().optional(),
+});
+
+export const listingDraftRecordSchema = listingDraftRequestSchema.merge(listingDraftResultSchema).extend({
+  listing_draft_id: z.string().trim().min(1),
+  created_at: z.string().trim().min(1),
+  updated_at: z.string().trim().min(1),
+  messages: z.array(valuationMessageSchema).default([]),
 });
 
 const optionalTextField = z.string().trim().optional();

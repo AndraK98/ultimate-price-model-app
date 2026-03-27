@@ -117,8 +117,26 @@ export interface ValuationRequestInput {
 
 export interface ListingDraftRequestInput {
   source_url: string;
+  stone_clues: string;
+  metal_hint: string;
+  internal_notes: string;
+  weight_basis_preference: "auto" | "women_7" | "men_10";
   created_by: string;
 }
+
+export interface ListingDraftStoneCandidate {
+  stone_id: string;
+  name: string;
+  shape: string;
+  color: string;
+  quality: string;
+  size: string;
+  carat: number;
+  final_price: number;
+  reason: string;
+}
+
+export type ListingDraftMessage = ValuationMessage;
 
 export interface ValuationResolvedDetails {
   valuation_target: ValuationTarget;
@@ -190,8 +208,10 @@ export interface ListingDraftResult {
   estimated_gold_weight_g: number;
   main_stone: string;
   main_stone_quantity: number;
+  main_stone_sku: string;
   side_stone: string;
   side_stone_quantity: number;
+  side_stone_sku: string;
   setting_sku: string;
   setting_sku_source: "catalog" | "generated";
   matched_catalog_setting_id: string;
@@ -199,10 +219,20 @@ export interface ListingDraftResult {
   metal: string;
   page_description: string;
   image_urls: string[];
+  stone_matching_notes: string;
+  main_stone_candidates: ListingDraftStoneCandidate[];
+  side_stone_candidates: ListingDraftStoneCandidate[];
   reasoning: string;
   recommended_next_step: string;
   grounding_search_queries: string[];
   grounding_sources: GroundingSource[];
+}
+
+export interface ListingDraftRecord extends ListingDraftRequestInput, ListingDraftResult {
+  listing_draft_id: string;
+  created_at: string;
+  updated_at: string;
+  messages: ListingDraftMessage[];
 }
 
 export interface ProductCompositionStoneLine {
@@ -251,6 +281,7 @@ export interface DashboardKpis {
   activeSettingCount: number;
   openInquiryCount: number;
   valuationCount: number;
+  listingDraftCount: number;
   averageQuote: number;
 }
 
@@ -297,6 +328,7 @@ export interface DashboardSnapshot {
   settings: Setting[];
   inquiries: Inquiry[];
   valuations: ValuationRecord[];
+  listingDrafts: ListingDraftRecord[];
 }
 
 export interface StoneFilters {

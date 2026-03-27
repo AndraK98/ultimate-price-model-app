@@ -1,3 +1,4 @@
+import { readActivityDatabase } from "@/lib/data/activity-store";
 import { getAppConfig } from "@/lib/config";
 import { getRepository } from "@/lib/repositories";
 import { type DashboardSnapshot } from "@/lib/types";
@@ -9,13 +10,15 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const repository = getRepository();
   const config = getAppConfig();
 
-  const [stones, settings, inquiries, valuations, pricingDefaults] = await Promise.all([
+  const [stones, settings, inquiries, valuations, pricingDefaults, activityDatabase] = await Promise.all([
     repository.listStones(),
     repository.listSettings(),
     repository.listInquiries(),
     repository.listValuations(),
     repository.getPricingDefaults(),
+    readActivityDatabase(),
   ]);
+  const listingDrafts = activityDatabase.listingDrafts.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
 
   const averageQuote =
     inquiries.length > 0
@@ -39,11 +42,13 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       activeSettingCount: settings.filter((setting) => setting.status === "active").length,
       openInquiryCount: inquiries.filter((inquiry) => inquiry.status !== "quoted" && inquiry.status !== "closed").length,
       valuationCount: valuations.length,
+      listingDraftCount: listingDrafts.length,
       averageQuote,
     },
     stones: stones.slice(0, initialCatalogPageSize),
     settings: settings.slice(0, initialCatalogPageSize),
     inquiries,
     valuations,
+    listingDrafts,
   };
 }

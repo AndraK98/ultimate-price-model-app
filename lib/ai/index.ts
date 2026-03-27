@@ -65,6 +65,10 @@ export async function buildListingDraft(
   input: ListingDraftRequestInput,
   snapshot: ShopifyListingSnapshot,
   context: ListingDraftCatalogContext,
+  options?: {
+    history?: ValuationMessage[];
+    currentDraft?: ListingDraftResult;
+  },
 ): Promise<{
   result: ListingDraftResult;
   provider: ValuationProviderName;
@@ -76,7 +80,7 @@ export async function buildListingDraft(
   }
 
   const provider = new GeminiListingDraftProvider(config.gemini.apiKey, config.gemini.model);
-  const result = await provider.draft(input, snapshot, context);
+  const result = await provider.draft(input, snapshot, context, options);
   return {
     result,
     provider: "gemini",

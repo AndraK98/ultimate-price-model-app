@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   inquiryInputSchema,
+  listingDraftRecordSchema,
   valuationEstimateSchema,
   valuationMessageSchema,
   valuationRequestSchema,
@@ -31,6 +32,7 @@ const valuationRecordSchema = valuationRequestSchema
 export const activityDatabaseSchema = z.object({
   inquiries: z.array(inquirySchema),
   valuations: z.array(valuationRecordSchema),
+  listingDrafts: z.array(listingDraftRecordSchema).default([]),
 });
 
 export type ActivityDatabase = z.infer<typeof activityDatabaseSchema>;
@@ -38,6 +40,7 @@ export type ActivityDatabase = z.infer<typeof activityDatabaseSchema>;
 export const emptyActivityDatabase: ActivityDatabase = {
   inquiries: [],
   valuations: [],
+  listingDrafts: [],
 };
 
 function buildLegacyAssistantMessage(valuation: Record<string, unknown>) {
@@ -69,10 +72,12 @@ export function normalizeLegacyActivityDatabase(database: unknown): unknown {
   const source = database as {
     inquiries?: unknown[];
     valuations?: Array<Record<string, unknown>>;
+    listingDrafts?: unknown[];
   };
 
   return {
     ...source,
+    listingDrafts: Array.isArray(source.listingDrafts) ? source.listingDrafts : [],
     valuations: Array.isArray(source.valuations)
       ? source.valuations.map((valuation) => {
           const createdAt = String(valuation.created_at ?? "").trim() || new Date().toISOString();

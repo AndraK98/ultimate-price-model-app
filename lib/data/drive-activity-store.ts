@@ -11,6 +11,7 @@ type DriveFolderSet = {
   chatsFolderId: string;
   customListingsFolderId: string;
   approximationsFolderId: string;
+  missingListingDraftsFolderId: string;
 };
 
 let folderCache: DriveFolderSet | null = null;
@@ -35,6 +36,7 @@ async function resolveDriveFolders(): Promise<DriveFolderSet> {
     config.google.drive.chatsFolderId,
     config.google.drive.customListingsFolderId,
     config.google.drive.approximationsFolderId,
+    config.google.drive.missingListingDraftsFolderId,
   ].join("::");
 
   if (folderCache && folderCacheKey === cacheKey) {
@@ -49,7 +51,7 @@ async function resolveDriveFolders(): Promise<DriveFolderSet> {
     throw new Error("The configured Google Drive knowledge folder has no parent folder.");
   }
 
-  const [chatsFolder, customListingsFolder, approximationsFolder] = await Promise.all([
+  const [chatsFolder, customListingsFolder, approximationsFolder, missingListingDraftsFolder] = await Promise.all([
     config.google.drive.chatsFolderId
       ? client.getFile(config.google.drive.chatsFolderId)
       : client.ensureFolder(assistantFolderId, "Chats"),
@@ -59,12 +61,16 @@ async function resolveDriveFolders(): Promise<DriveFolderSet> {
     config.google.drive.approximationsFolderId
       ? client.getFile(config.google.drive.approximationsFolderId)
       : client.ensureFolder(config.google.drive.parentFolderId, "approximations"),
+    config.google.drive.missingListingDraftsFolderId
+      ? client.getFile(config.google.drive.missingListingDraftsFolderId)
+      : client.ensureFolder(config.google.drive.parentFolderId, "Missing Listing Draft Conversations"),
   ]);
 
   folderCache = {
     chatsFolderId: chatsFolder.id,
     customListingsFolderId: customListingsFolder.id,
     approximationsFolderId: approximationsFolder.id,
+    missingListingDraftsFolderId: missingListingDraftsFolder.id,
   };
   folderCacheKey = cacheKey;
 
@@ -105,14 +111,16 @@ async function upsertJsonFile(folderId: string, name: string, content: unknown):
 
 export async function readDriveActivityDatabase(): Promise<ActivityDatabase> {
   const folders = await resolveDriveFolders();
-  const [inquiries, valuations] = await Promise.all([
+  const [inquiries, valuations, listingDrafts] = await Promise.all([
     readJsonFolder(folders.customListingsFolderId),
     readJsonFolder(folders.approximationsFolderId),
+    readJsonFolder(folders.missingListingDraftsFolderId),
   ]);
 
   const normalized = normalizeLegacyActivityDatabase({
     inquiries,
     valuations,
+    listingDrafts,
   });
 
   return activityDatabaseSchema.parse(normalized);
@@ -130,6 +138,13 @@ export async function writeDriveActivityDatabase(database: ActivityDatabase): Pr
         upsertJsonFile(folders.approximationsFolderId, `${valuation.valuation_id}.json`, valuation),
         upsertJsonFile(folders.chatsFolderId, `${valuation.valuation_id}.json`, valuation),
       ]),
+      ...database.listingDrafts.map((listingDraft) =>
+        upsertJsonFile(
+          folders.missingListingDraftsFolderId,
+          `${listingDraft.listing_draft_id}.json`,
+          listingDraft,
+        ),
+      ),
     ]);
   });
 
