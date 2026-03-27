@@ -1,5 +1,6 @@
 import { runWithGeminiModelFallback } from "@/lib/ai/google-genai";
 import { type ListingDraftCatalogContext, type ListingDraftProvider } from "@/lib/ai/types";
+import { matchesStoneSearch } from "@/lib/catalog-search";
 import { type Setting, type Stone, type ListingDraftRequestInput, type ListingDraftResult, type ListingDraftStoneCandidate, type ValuationMessage } from "@/lib/types";
 import { type ShopifyListingSnapshot } from "@/lib/services/shopify-listing-snapshot";
 import { listingDraftResultSchema } from "@/lib/validators";
@@ -61,16 +62,79 @@ function tokenize(value: string) {
   );
 }
 
-function buildSearchText(snapshot: ShopifyListingSnapshot, input: ListingDraftRequestInput) {
+const stoneFamilyAliasMap = {
+  diamond: ["diamond", "diamonds", "lab diamond", "lab diamonds", "lab dia", "natural diamond"],
+  moissanite: ["moissanite", "moissanites"],
+  sapphire: ["sapphire", "sapphires"],
+  ruby: ["ruby", "rubies"],
+  emerald: ["emerald", "emeralds"],
+  alexandrite: ["alexandrite", "alexandrites"],
+  tanzanite: ["tanzanite", "tanzanites"],
+  topaz: ["topaz", "topazes"],
+  aquamarine: ["aquamarine", "aquamarines"],
+  amethyst: ["amethyst", "amethysts"],
+  garnet: ["garnet", "garnets"],
+  opal: ["opal", "opals"],
+  tourmaline: ["tourmaline", "tourmalines"],
+  morganite: ["morganite", "morganites"],
+  spinel: ["spinel", "spinels"],
+  onyx: ["onyx"],
+  pearl: ["pearl", "pearls"],
+} as const;
+
+type StoneFamilyKey = keyof typeof stoneFamilyAliasMap;
+
+function buildSearchText(
+  snapshot: ShopifyListingSnapshot,
+  input: ListingDraftRequestInput,
+  options?: {
+    history?: ValuationMessage[];
+    currentDraft?: ListingDraftResult;
+  },
+) {
   return [
     snapshot.title,
     snapshot.description,
     input.stone_clues,
     input.metal_hint,
     input.internal_notes,
+    options?.history?.map((message) => message.content).join(" "),
+    options?.currentDraft?.main_stone,
+    options?.currentDraft?.main_stone_sku,
+    options?.currentDraft?.side_stone,
+    options?.currentDraft?.side_stone_sku,
+    options?.currentDraft?.stone_matching_notes,
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function buildStoneCatalogText(stone: Stone) {
+  return [
+    stone.stone_id,
+    stone.name,
+    stone.shape,
+    stone.color,
+    stone.quality,
+    formatStoneSize(stone.min_size_mm, stone.max_size_mm),
+    stone.notes,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function extractStoneFamilies(description: string): StoneFamilyKey[] {
+  const normalized = description.toLowerCase();
+
+  return Object.entries(stoneFamilyAliasMap)
+    .filter(([, aliases]) => aliases.some((alias) => normalized.includes(alias)))
+    .map(([family]) => family as StoneFamilyKey);
+}
+
+function stoneMatchesFamily(stone: Stone, family: StoneFamilyKey) {
+  const haystack = buildStoneCatalogText(stone);
+  return stoneFamilyAliasMap[family].some((alias) => haystack.includes(alias));
 }
 
 function buildConversationTranscript(history?: ValuationMessage[]) {
@@ -109,8 +173,73 @@ function buildCurrentDraftSummary(currentDraft?: ListingDraftResult) {
 }
 
 function scoreStoneMatch(stone: Stone, description: string) {
-  const haystack = `${stone.stone_id} ${stone.name} ${stone.shape} ${stone.color} ${stone.quality} ${formatStoneSize(stone.min_size_mm, stone.max_size_mm)}`.toLowerCase();
-  return tokenize(description).reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  const normalizedDescription = description.toLowerCase();
+  const haystack = buildStoneCatalogText(stone);
+  const activeFamilies = extractStoneFamilies(description);
+  let score = tokenize(description).reduce((total, token) => total + (haystack.includes(token) ? 3 : 0), 0);
+
+  if (normalizedDescription.includes(stone.stone_id.toLowerCase())) {
+    score += 1000;
+  }
+
+  if (normalizedDescription.includes(stone.name.toLowerCase())) {
+    score += 400;
+  }
+
+  if (matchesStoneSearch(stone, description)) {
+    score += 200;
+  }
+
+  if (activeFamilies.some((family) => stoneMatchesFamily(stone, family))) {
+    score += 150;
+  }
+
+  return score;
+}
+
+function extractStoneFamilyMatches(stones: Stone[], description: string) {
+  const activeFamilies = extractStoneFamilies(description);
+
+  if (!activeFamilies.length) {
+    return [] as Stone[];
+  }
+
+  const matches = stones.filter((stone) => activeFamilies.some((family) => stoneMatchesFamily(stone, family)));
+
+  return matches;
+}
+
+function extractStoneSkuMatches(stones: Stone[], description: string) {
+  const skuTokens = Array.from(new Set(description.match(/\b[A-Z0-9]{6,}\b/gi) ?? [])).map((value) => value.toUpperCase());
+
+  if (!skuTokens.length) {
+    return [] as Stone[];
+  }
+
+  return stones.filter((stone) => skuTokens.some((token) => stone.stone_id.toUpperCase().includes(token)));
+}
+
+function extractStoneNameMatches(stones: Stone[], description: string) {
+  const normalized = description.toLowerCase();
+
+  return stones.filter((stone) => {
+    const name = stone.name.toLowerCase().trim();
+    if (!name) {
+      return false;
+    }
+
+    if (normalized.includes(name)) {
+      return true;
+    }
+
+    const significantTokens = tokenize(name).filter((token) => token.length >= 4);
+    if (significantTokens.length < 2) {
+      return false;
+    }
+
+    const matchedTokenCount = significantTokens.filter((token) => normalized.includes(token)).length;
+    return matchedTokenCount >= Math.min(2, significantTokens.length);
+  });
 }
 
 function scoreSettingMatch(setting: Setting, description: string) {
@@ -134,11 +263,39 @@ function buildSettingExcerpt(settings: Setting[], description: string) {
 }
 
 function buildStoneExcerpt(stones: Stone[], description: string) {
-  return [...stones]
+  const ranked = [...stones]
     .map((stone) => ({ stone, score: scoreStoneMatch(stone, description) }))
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 20)
-    .map(({ stone }) => ({
+    .sort((left, right) => right.score - left.score);
+  const skuMatches = extractStoneSkuMatches(stones, description);
+  const nameMatches = extractStoneNameMatches(stones, description);
+  const familyMatches = extractStoneFamilyMatches(stones, description);
+  const smartMatches = stones.filter((stone) => matchesStoneSearch(stone, description));
+  const activeFamilies = extractStoneFamilies(description);
+  const combined = Array.from(
+    new Map(
+      [
+        ...skuMatches,
+        ...nameMatches,
+        ...familyMatches,
+        ...smartMatches,
+        ...ranked.filter((entry) => entry.score > 0).map((entry) => entry.stone),
+        ...ranked.map((entry) => entry.stone),
+      ]
+        .map((stone) => [stone.stone_id, stone]),
+    ).values(),
+  ).slice(0, 80);
+
+  return {
+    catalog_size: stones.length,
+    active_family_hints: activeFamilies,
+    family_counts: activeFamilies.map((family) => ({
+      family,
+      match_count: stones.filter((stone) => stoneMatchesFamily(stone, family)).length,
+    })),
+    direct_sku_matches: skuMatches.slice(0, 10).map((stone) => stone.stone_id),
+    direct_name_matches: nameMatches.slice(0, 10).map((stone) => stone.stone_id),
+    smart_query_match_count: smartMatches.length,
+    candidates: combined.map((stone) => ({
       stone_id: stone.stone_id,
       name: stone.name,
       shape: stone.shape,
@@ -147,7 +304,8 @@ function buildStoneExcerpt(stones: Stone[], description: string) {
       size: formatStoneSize(stone.min_size_mm, stone.max_size_mm),
       carat: stone.carat,
       final_price: stone.final_price,
-    }));
+    })),
+  };
 }
 
 function findMatchedSetting(settings: Setting[], settingId: string, description: string) {
@@ -287,7 +445,7 @@ export class GeminiListingDraftProvider implements ListingDraftProvider {
       currentDraft?: ListingDraftResult;
     },
   ): Promise<ListingDraftResult> {
-    const searchText = buildSearchText(snapshot, input);
+    const searchText = buildSearchText(snapshot, input, options);
     const prompt = [
       "You are Capucinne's internal Shopify listing reconstruction assistant.",
       "Your task is to reconstruct a missing Master Popisi / Final Pricing Rings draft from a Shopify product page.",
@@ -295,7 +453,8 @@ export class GeminiListingDraftProvider implements ListingDraftProvider {
       "Count stones conservatively. Return one main stone bucket and one side stone bucket. If there are no stones, both quantities must be 0.",
       "Estimate the ring's pure-gold weight in grams for either US size 10 if the ring reads as men's, or US size 7 if it reads as women's. You must explicitly state which size basis you used.",
       "Try to match the piece to a setting SKU from the provided Settings - Rings excerpt. If no setting is a clear fit, leave matched_catalog_setting_id empty.",
-      "Try to match the main and side stones to real Stone sheet SKUs from the provided catalog excerpt. Because uncertainty is normal, return a ranked range of likely candidates for both main and side stones when relevant.",
+      "Try to match the main and side stones to real Stone sheet SKUs from the provided catalog lookup. The stone catalog lookup comes from the full app catalog filtered from the entire Stones sheet, not from a tiny sample. Use direct SKU hits and direct stone-name or family matches first, then the ranked candidate list.",
+      "If the stone catalog lookup says a family has a positive match_count, you must treat that family as present in the Stones catalog and choose from those SKUs instead of claiming that family is missing.",
       "If the user later corrects the draft in the conversation, the latest explicit correction wins over the previous draft, the Shopify text, or the image guess.",
       "Return only strict JSON with these keys: product_id, product_handle, title, weight_reference_size, estimated_gold_weight_g, main_stone, main_stone_quantity, main_stone_sku, side_stone, side_stone_quantity, side_stone_sku, matched_catalog_setting_id, setting_style, metal, page_description, stone_matching_notes, main_stone_candidates, side_stone_candidates, reasoning, recommended_next_step.",
       "main_stone_candidates and side_stone_candidates must be arrays of objects with stone_id and reason. Use up to 3 items per array.",
@@ -314,7 +473,7 @@ export class GeminiListingDraftProvider implements ListingDraftProvider {
       `Current draft before this turn:\n${buildCurrentDraftSummary(options?.currentDraft)}`,
       `Conversation so far:\n${buildConversationTranscript(options?.history)}`,
       `Available image URLs: ${JSON.stringify(snapshot.imageUrls)}`,
-      `Candidate stones from Stones sheet: ${JSON.stringify(buildStoneExcerpt(context.stones, searchText))}`,
+      `Stone catalog lookup from full Stones sheet: ${JSON.stringify(buildStoneExcerpt(context.stones, searchText))}`,
       `Candidate settings from Settings - Rings: ${JSON.stringify(buildSettingExcerpt(context.settings, searchText))}`,
     ].join("\n");
 
