@@ -115,6 +115,11 @@ export interface ValuationRequestInput {
   created_by: string;
 }
 
+export interface ListingDraftRequestInput {
+  source_url: string;
+  created_by: string;
+}
+
 export interface ValuationResolvedDetails {
   valuation_target: ValuationTarget;
   stone_type: string;
@@ -173,6 +178,31 @@ export interface ValuationRecord extends ValuationRequestInput, ValuationResolve
   created_at: string;
   updated_at: string;
   messages: ValuationMessage[];
+}
+
+export interface ListingDraftResult {
+  source_url: string;
+  provider: ValuationProviderName;
+  product_id: string;
+  product_handle: string;
+  title: string;
+  weight_reference_size: string;
+  estimated_gold_weight_g: number;
+  main_stone: string;
+  main_stone_quantity: number;
+  side_stone: string;
+  side_stone_quantity: number;
+  setting_sku: string;
+  setting_sku_source: "catalog" | "generated";
+  matched_catalog_setting_id: string;
+  setting_style: string;
+  metal: string;
+  page_description: string;
+  image_urls: string[];
+  reasoning: string;
+  recommended_next_step: string;
+  grounding_search_queries: string[];
+  grounding_sources: GroundingSource[];
 }
 
 export interface ProductCompositionStoneLine {

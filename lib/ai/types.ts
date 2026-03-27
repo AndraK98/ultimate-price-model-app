@@ -1,4 +1,6 @@
 import {
+  type ListingDraftRequestInput,
+  type ListingDraftResult,
   type MetalPrices,
   type SettingFilters,
   type Setting,
@@ -50,4 +52,25 @@ export interface CatalogSearchAssistProvider {
     input: CatalogSearchAssistRequest,
     context: ValuationCatalogContext,
   ): Promise<CatalogSearchAssistResult>;
+}
+
+export interface ListingDraftCatalogContext {
+  settings: Setting[];
+}
+
+export interface ListingDraftProvider {
+  providerName: ValuationProviderName;
+  draft(
+    input: ListingDraftRequestInput,
+    snapshot: {
+      sourceUrl: string;
+      productId: string;
+      productHandle: string;
+      title: string;
+      description: string;
+      imageUrls: string[];
+      imageDataUrls: string[];
+    },
+    context: ListingDraftCatalogContext,
+  ): Promise<ListingDraftResult>;
 }

@@ -94,6 +94,11 @@ export const valuationRequestSchema = z.object({
   created_by: z.string().trim().default("atelier-team"),
 });
 
+export const listingDraftRequestSchema = z.object({
+  source_url: z.string().trim().url(),
+  created_by: z.string().trim().default("atelier-team"),
+});
+
 export const valuationResolvedDetailsSchema = z.object({
   valuation_target: z.enum(["stone", "setting", "piece"]).default("piece"),
   stone_type: textField,
@@ -131,6 +136,31 @@ export const valuationEstimateSchema = z.object({
   grounding_search_queries: z.array(z.string().trim().min(1)).default([]),
   grounding_sources: z.array(groundingSourceSchema).default([]),
   referenced_knowledge_files: z.array(knowledgeFileReferenceSchema).default([]),
+});
+
+export const listingDraftResultSchema = z.object({
+  source_url: z.string().trim().url(),
+  provider: z.literal("gemini"),
+  product_id: textField,
+  product_handle: textField,
+  title: textField,
+  weight_reference_size: z.string().trim().min(1),
+  estimated_gold_weight_g: valuationNumericField.default(0),
+  main_stone: textField,
+  main_stone_quantity: valuationNumericField.default(0),
+  side_stone: textField,
+  side_stone_quantity: valuationNumericField.default(0),
+  setting_sku: textField,
+  setting_sku_source: z.enum(["catalog", "generated"]).default("generated"),
+  matched_catalog_setting_id: textField,
+  setting_style: textField,
+  metal: textField,
+  page_description: textField,
+  image_urls: z.array(z.string().trim().url()).default([]),
+  reasoning: z.string().trim().min(1),
+  recommended_next_step: z.string().trim().min(1),
+  grounding_search_queries: z.array(z.string().trim().min(1)).default([]),
+  grounding_sources: z.array(groundingSourceSchema).default([]),
 });
 
 export const valuationMessageSchema = z.object({

@@ -17,6 +17,7 @@ import { calculateQuoteBreakdown } from "@/lib/services/quote-service";
 import {
   type DashboardSnapshot,
   type Inquiry,
+  type ListingDraftResult,
   type PaginatedResult,
   type ProductComposition,
   type ProductCompositionVariant,
@@ -43,6 +44,11 @@ type ValuationForm = {
   description: string;
   reference_image_url: string;
   image_data_url: string;
+};
+
+type ListingDraftForm = {
+  source_url: string;
+  created_by: string;
 };
 
 type ProjectStoneLine = {
@@ -146,6 +152,11 @@ const blankValuation: ValuationForm = {
   description: "",
   reference_image_url: "",
   image_data_url: "",
+};
+
+const blankListingDraft: ListingDraftForm = {
+  source_url: "",
+  created_by: "atelier-team",
 };
 
 const blankStoneBrowseFilters: StoneBrowseFilters = {
@@ -255,6 +266,43 @@ function buildAssistantMessagePreview(message: ValuationMessage) {
   return message.pricing_summary || message.content;
 }
 
+function sanitizeTsvCell(value: string | number) {
+  return String(value).replace(/[\t\r\n]+/g, " ").trim();
+}
+
+function buildListingDraftPreview(draft: ListingDraftResult) {
+  const headers = [
+    "ID",
+    "Handle",
+    "Title",
+    "Weight basis",
+    "Estimated gold weight (g)",
+    "Main stone",
+    "Main stone qty",
+    "Side stone",
+    "Side stone qty",
+    "Setting SKU",
+  ];
+
+  const values = [
+    draft.product_id || "",
+    draft.product_handle || "",
+    draft.title || "",
+    draft.weight_reference_size,
+    draft.estimated_gold_weight_g,
+    draft.main_stone || "",
+    draft.main_stone_quantity || 0,
+    draft.side_stone || "",
+    draft.side_stone_quantity || 0,
+    draft.setting_sku || "",
+  ];
+
+  return [
+    headers.map((value) => sanitizeTsvCell(value)).join("\t"),
+    values.map((value) => sanitizeTsvCell(value)).join("\t"),
+  ].join("\n");
+}
+
 function summarizeRecallVariant(variant: ProductCompositionVariant): RecallVariantSummary {
   return {
     missingStoneCount: variant.stones.filter((line) => !line.stone).length,
@@ -326,6 +374,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [valuations, setValuations] = useState(initialSnapshot.valuations);
   const [projectForm, setProjectForm] = useState<ProjectForm>(blankProject);
   const [valuationForm, setValuationForm] = useState(blankValuation);
+  const [listingDraftForm, setListingDraftForm] = useState<ListingDraftForm>(blankListingDraft);
   const [stoneBrowseFilters, setStoneBrowseFilters] = useState<StoneBrowseFilters>(blankStoneBrowseFilters);
   const [settingBrowseFilters, setSettingBrowseFilters] = useState<SettingBrowseFilters>(blankSettingBrowseFilters);
   const [stoneSearch, setStoneSearch] = useState("");
@@ -350,6 +399,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [recalledVariantKey, setRecalledVariantKey] = useState("");
   const [projectNotice, setProjectNotice] = useState("");
   const [valuationNotice, setValuationNotice] = useState("");
+  const [listingDraftNotice, setListingDraftNotice] = useState("");
   const [valuationFollowUp, setValuationFollowUp] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [stoneError, setStoneError] = useState("");
@@ -361,10 +411,13 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
   const [stoneAssistNotice, setStoneAssistNotice] = useState("");
   const [settingAssistNotice, setSettingAssistNotice] = useState("");
   const [valuationResult, setValuationResult] = useState<ValuationRecord | null>(initialSnapshot.valuations[0] ?? null);
+  const [listingDraftResult, setListingDraftResult] = useState<ListingDraftResult | null>(null);
   const [valuationModal, setValuationModal] = useState<ValuationRecord | null>(null);
+  const [listingDraftModal, setListingDraftModal] = useState<ListingDraftResult | null>(null);
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationFollowUpLoading, setValuationFollowUpLoading] = useState(false);
   const [valuationKnowledgeLoading, setValuationKnowledgeLoading] = useState(false);
+  const [listingDraftLoading, setListingDraftLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const deferredStoneSearch = useDeferredValue(stoneSearch.trim());
@@ -840,6 +893,37 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       pushToast(message, "error");
     } finally {
       setValuationFollowUpLoading(false);
+    }
+  }
+
+  async function handleListingDraftSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setListingDraftLoading(true);
+    setListingDraftNotice("");
+
+    try {
+      const result = await postJson<ListingDraftResult>("/api/listing-drafts", {
+        source_url: listingDraftForm.source_url,
+        created_by: listingDraftForm.created_by,
+      });
+      setListingDraftResult(result);
+      setListingDraftNotice(`Drafted ${result.product_handle || result.product_id || "listing"} for the 3D team.`);
+      pushToast(`Drafted ${result.setting_sku} for ${result.product_handle || result.product_id || "listing"}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not draft the Shopify listing.";
+      setListingDraftNotice(message);
+      pushToast(message, "error");
+    } finally {
+      setListingDraftLoading(false);
+    }
+  }
+
+  async function copyListingDraftBlock(draft: ListingDraftResult) {
+    try {
+      await navigator.clipboard.writeText(buildListingDraftPreview(draft));
+      pushToast(`Draft row copied for ${draft.product_handle || draft.product_id || "listing"}.`);
+    } catch {
+      pushToast("Could not copy the draft row.", "error");
     }
   }
 
@@ -1707,6 +1791,108 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
     </SectionCard>
   );
 
+  const listingDraftSection = (
+    <SectionCard eyebrow="3D intake" title="Missing listing draft">
+      <div className="section-grid section-grid--two">
+        <form className="stack" onSubmit={handleListingDraftSubmit}>
+          <Field label="Shopify product link">
+            <input
+              className="field-control"
+              required
+              value={listingDraftForm.source_url}
+              onChange={(event) => setListingDraftForm((current) => ({ ...current, source_url: event.target.value }))}
+              placeholder="https://www.capucinne.com/products/..."
+            />
+          </Field>
+          <div className="action-row">
+            <button className="button" disabled={listingDraftLoading} type="submit">
+              {listingDraftLoading ? "Scanning Shopify..." : "Draft missing listing"}
+            </button>
+            {listingDraftNotice ? <p className="inline-note">{listingDraftNotice}</p> : null}
+          </div>
+        </form>
+
+        <div className="detail-stack">
+          <div className="detail-card">
+            <div className="detail-heading">
+              <div>
+                <h3>Latest draft</h3>
+              </div>
+              {listingDraftLoading ? (
+                <StatusPill tone="rose">thinking</StatusPill>
+              ) : listingDraftResult ? (
+                <StatusPill>{listingDraftResult.provider}</StatusPill>
+              ) : null}
+            </div>
+            {listingDraftLoading ? (
+              <div className="thinking-panel">
+                <div className="thinking-panel__status">
+                  <span>Scanning the listing with Gemini</span>
+                  <div className="thinking-dots" aria-hidden="true">
+                    <span className="thinking-dot" />
+                    <span className="thinking-dot" />
+                    <span className="thinking-dot" />
+                  </div>
+                </div>
+                <p className="detail-note">Reading the product page, gallery, and description to draft a Master Popisi-style entry.</p>
+                <div className="thinking-lines" aria-hidden="true">
+                  <span className="thinking-line thinking-line--long" />
+                  <span className="thinking-line thinking-line--mid" />
+                  <span className="thinking-line thinking-line--short" />
+                </div>
+              </div>
+            ) : listingDraftResult ? (
+              <>
+                <div className="detail-block">
+                  <h4>Request</h4>
+                  <p className="detail-note">
+                    <a className="link-inline" href={listingDraftResult.source_url} target="_blank" rel="noreferrer">
+                      {listingDraftResult.source_url}
+                    </a>
+                  </p>
+                  <p className="detail-note detail-note--strong">{listingDraftResult.title}</p>
+                </div>
+                <div className="quote-grid">
+                  <QuoteItem label="Setting SKU" value={listingDraftResult.setting_sku || "Not set"} highlight />
+                  <QuoteItem label="Main stone qty" value={String(listingDraftResult.main_stone_quantity || 0)} />
+                  <QuoteItem label="Side stone qty" value={String(listingDraftResult.side_stone_quantity || 0)} />
+                </div>
+                <dl className="detail-grid detail-grid--compact">
+                  <DetailItem label="ID" value={listingDraftResult.product_id || "Not found"} />
+                  <DetailItem label="Handle" value={listingDraftResult.product_handle || "Not found"} />
+                  <DetailItem label="Main stone" value={listingDraftResult.main_stone || "None"} />
+                  <DetailItem label="Side stone" value={listingDraftResult.side_stone || "None"} />
+                  <DetailItem label="Weight basis" value={listingDraftResult.weight_reference_size} />
+                  <DetailItem label="Estimated gold weight" value={`${listingDraftResult.estimated_gold_weight_g} g`} />
+                </dl>
+                <div className="detail-block">
+                  <h4>Master Popisi draft</h4>
+                  <p className="detail-note">Draft only. Nothing is written back to Google Sheets.</p>
+                  <pre className="draft-row-preview"><code>{buildListingDraftPreview(listingDraftResult)}</code></pre>
+                  <p className="detail-note">{listingDraftResult.reasoning}</p>
+                  <p className="detail-note">{listingDraftResult.recommended_next_step}</p>
+                </div>
+                {listingDraftResult.image_urls.length ? (
+                  <div className="valuation-media-grid">
+                    {listingDraftResult.image_urls.slice(0, 4).map((imageUrl) => (
+                      <MediaPreview key={imageUrl} src={imageUrl} alt={listingDraftResult.title} />
+                    ))}
+                  </div>
+                ) : null}
+                <div className="action-row action-row--compact">
+                  <InlineButton onClick={() => void copyListingDraftBlock(listingDraftResult)}>Copy draft row</InlineButton>
+                  <InlineButton onClick={() => setListingDraftModal(listingDraftResult)}>Open details</InlineButton>
+                </div>
+              </>
+            ) : (
+              <p className="empty-state">No listing draft yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </SectionCard>
+  );
+
   return (
     <main className="dashboard-shell">
       <header className="dashboard-app-header">
@@ -1725,6 +1911,7 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
       {catalogSections}
       {projectSection}
       {aiSection}
+      {listingDraftSection}
       {valuationModal ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setValuationModal(null)}>
           <section className="modal-card" role="dialog" aria-modal="true" aria-label="Approximation details" onClick={(event) => event.stopPropagation()}>
@@ -1791,6 +1978,64 @@ export function DashboardApp({ initialSnapshotJson }: { initialSnapshotJson: str
                 Load into approximation
               </button>
               <InlineButton onClick={() => setValuationModal(null)}>Close</InlineButton>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {listingDraftModal ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setListingDraftModal(null)}>
+          <section className="modal-card" role="dialog" aria-modal="true" aria-label="Missing listing draft details" onClick={(event) => event.stopPropagation()}>
+            <div className="detail-heading">
+              <div>
+                <p className="eyebrow">3D intake draft</p>
+                <h3>{listingDraftModal.title || listingDraftModal.product_handle || listingDraftModal.product_id}</h3>
+              </div>
+              <StatusPill>{listingDraftModal.provider}</StatusPill>
+            </div>
+            <div className="detail-block">
+              <h4>Request</h4>
+              <p className="detail-note">
+                <a className="link-inline" href={listingDraftModal.source_url} target="_blank" rel="noreferrer">
+                  {listingDraftModal.source_url}
+                </a>
+              </p>
+              <p className="detail-note">{listingDraftModal.page_description || "No product description found on the page."}</p>
+            </div>
+            <dl className="detail-grid">
+              <DetailItem label="ID" value={listingDraftModal.product_id || "Not found"} />
+              <DetailItem label="Handle" value={listingDraftModal.product_handle || "Not found"} />
+              <DetailItem label="Setting SKU" value={listingDraftModal.setting_sku || "Not set"} />
+              <DetailItem label="SKU source" value={listingDraftModal.setting_sku_source} />
+              <DetailItem label="Matched setting" value={listingDraftModal.matched_catalog_setting_id || "No catalog match"} />
+              <DetailItem label="Setting style" value={listingDraftModal.setting_style || "Not set"} />
+              <DetailItem label="Metal" value={listingDraftModal.metal || "Not set"} />
+              <DetailItem label="Weight basis" value={listingDraftModal.weight_reference_size} />
+              <DetailItem label="Estimated gold weight" value={`${listingDraftModal.estimated_gold_weight_g} g`} />
+              <DetailItem label="Main stone" value={`${listingDraftModal.main_stone || "None"} x${listingDraftModal.main_stone_quantity || 0}`} />
+              <DetailItem label="Side stone" value={`${listingDraftModal.side_stone || "None"} x${listingDraftModal.side_stone_quantity || 0}`} />
+            </dl>
+            <div className="detail-block">
+              <h4>Master Popisi draft</h4>
+              <p className="detail-note">Draft only. Nothing is written back to Google Sheets.</p>
+              <pre className="draft-row-preview"><code>{buildListingDraftPreview(listingDraftModal)}</code></pre>
+            </div>
+            <div className="detail-block">
+              <h4>Gemini response</h4>
+              <p className="detail-note detail-note--strong">{listingDraftModal.reasoning}</p>
+              <p className="detail-note">{listingDraftModal.recommended_next_step}</p>
+            </div>
+            {listingDraftModal.image_urls.length ? (
+              <div className="valuation-media-grid">
+                {listingDraftModal.image_urls.map((imageUrl) => (
+                  <MediaPreview key={imageUrl} src={imageUrl} alt={listingDraftModal.title} />
+                ))}
+              </div>
+            ) : null}
+            <div className="modal-actions">
+              <button className="button" type="button" onClick={() => void copyListingDraftBlock(listingDraftModal)}>
+                Copy draft row
+              </button>
+              <InlineButton onClick={() => setListingDraftModal(null)}>Close</InlineButton>
             </div>
           </section>
         </div>

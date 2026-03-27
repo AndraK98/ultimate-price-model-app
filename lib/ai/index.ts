@@ -1,8 +1,10 @@
 import { GeminiCatalogSearchAssistProvider } from "@/lib/ai/providers/gemini-catalog-search-assist-provider";
+import { GeminiListingDraftProvider } from "@/lib/ai/providers/gemini-listing-draft-provider";
 import { GeminiValuationProvider } from "@/lib/ai/providers/gemini-valuation-provider";
-import { type CatalogSearchAssistRequest, type CatalogSearchAssistResult, type ValuationCatalogContext } from "@/lib/ai/types";
+import { type CatalogSearchAssistRequest, type CatalogSearchAssistResult, type ListingDraftCatalogContext, type ValuationCatalogContext } from "@/lib/ai/types";
 import { getAppConfig } from "@/lib/config";
-import { type ValuationEstimate, type ValuationMessage, type ValuationProviderName, type ValuationRequestInput } from "@/lib/types";
+import { type ListingDraftRequestInput, type ListingDraftResult, type ValuationEstimate, type ValuationMessage, type ValuationProviderName, type ValuationRequestInput } from "@/lib/types";
+import { type ShopifyListingSnapshot } from "@/lib/services/shopify-listing-snapshot";
 
 export async function estimateValuation(input: ValuationRequestInput, context: ValuationCatalogContext): Promise<{
   estimate: ValuationEstimate;
@@ -53,6 +55,28 @@ export async function assistCatalogSearch(
 
   const provider = new GeminiCatalogSearchAssistProvider(config.gemini.apiKey, config.gemini.model);
   const result = await provider.assist(input, context);
+  return {
+    result,
+    provider: "gemini",
+  };
+}
+
+export async function buildListingDraft(
+  input: ListingDraftRequestInput,
+  snapshot: ShopifyListingSnapshot,
+  context: ListingDraftCatalogContext,
+): Promise<{
+  result: ListingDraftResult;
+  provider: ValuationProviderName;
+}> {
+  const config = getAppConfig();
+
+  if (!config.gemini.apiKey) {
+    throw new Error("GEMINI_API_KEY is required for AI listing draft generation.");
+  }
+
+  const provider = new GeminiListingDraftProvider(config.gemini.apiKey, config.gemini.model);
+  const result = await provider.draft(input, snapshot, context);
   return {
     result,
     provider: "gemini",
